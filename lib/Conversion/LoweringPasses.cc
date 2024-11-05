@@ -229,6 +229,34 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
 };
 
 
+struct MoveUnCCPass : public PassWrapper<MoveUnCCPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MoveUnCCPass)
+  
+  void runOnOperation() override {
+    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    SmallVector<std::pair<Operation*, Operation*>> ops;
+    module.walk([&](Operation *op){
+      if (auto uccOp = llvm::dyn_cast<UnrealizedConversionCastOp>(op)) {
+        for (auto &use: uccOp.getResult(0).getUses()) {
+          Operation *nextOp = use.getOwner();
+          if (isa<UnrealizedConversionCastOp>(nextOp))
+            ops.push_back(std::make_pair(op, nextOp));
+          break;
+        }
+      }
+    });
+    for (auto pairOp: ops) {
+      auto firstOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.first);
+      auto secondOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.second);
+      if (firstOp.getOperand(0).getType() == secondOp.getResult(0).getType()) {
+        secondOp.getResult(0).replaceAllUsesWith(firstOp.getOperand(0));
+      }
+      pairOp.second->erase();
+      pairOp.first->erase();
+    }
+  }
+};
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
@@ -236,6 +264,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
 //  弃用，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass() {
   return std::make_unique<ROCDLIdOpModifyPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createMoveUnCCPass() {
+  return std::make_unique<MoveUnCCPass>();
 }
 
 

@@ -7,7 +7,7 @@ std::unique_ptr<llvm::Module> translateModuleToLLVMIR(mlir::ModuleOp module) {
   mlir::registerBuiltinDialectTranslation(registry);   // 注册
   mlir::registerLLVMDialectTranslation(registry);
   mlir::registerROCDLDialectTranslation(registry);
-  mlir::registerNVVMDialectTranslation(registry);
+  // mlir::registerNVVMDialectTranslation(registry);
 
   module->getContext()->appendDialectRegistry(registry);
 

@@ -53,16 +53,17 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(createParallelToROCDLPass());                      // 自定义 scf.parallelOp -> gpu.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                  // scf -> cf
+  pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
+  pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
   pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
-
-  // pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
-  // pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
   pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
 
-  pm.addPass(mlir::createCanonicalizerPass());
+  // pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
+
+  pm.addPass(createMoveUnCCPass());
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
@@ -78,7 +79,7 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
         llvm_mod->print(llvm::outs(), nullptr);
         return true;
       }
-      return false;
+      return true;
     }
     return false;
   }

@@ -10,4 +10,6 @@ std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass();  // no use
 
+std::unique_ptr<OperationPass<ModuleOp>> createMoveUnCCPass();
+
 }
