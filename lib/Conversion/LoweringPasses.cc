@@ -228,24 +228,28 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
   }
 };
 
-
-struct MoveUnCCPass : public PassWrapper<MoveUnCCPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MoveUnCCPass)
+// 去除多余的unrealized_conversion_cast操作
+struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(EraseRedundantUnCCastPass)
   
   void runOnOperation() override {
     auto module = llvm::dyn_cast<ModuleOp>(getOperation());
-    SmallVector<std::pair<Operation*, Operation*>> ops;
+    SmallVector<std::pair<Operation*, Operation*>> pairOps;
+    SmallVector<Operation*> noChOps;
     module.walk([&](Operation *op){
       if (auto uccOp = llvm::dyn_cast<UnrealizedConversionCastOp>(op)) {
         for (auto &use: uccOp.getResult(0).getUses()) {
           Operation *nextOp = use.getOwner();
           if (isa<UnrealizedConversionCastOp>(nextOp))
-            ops.push_back(std::make_pair(op, nextOp));
+            pairOps.push_back(std::make_pair(op, nextOp));
           break;
+        }
+        if (uccOp.use_empty()) {
+          noChOps.push_back(op);
         }
       }
     });
-    for (auto pairOp: ops) {
+    for (auto pairOp: pairOps) {
       auto firstOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.first);
       auto secondOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.second);
       if (firstOp.getOperand(0).getType() == secondOp.getResult(0).getType()) {
@@ -254,6 +258,64 @@ struct MoveUnCCPass : public PassWrapper<MoveUnCCPass, OperationPass<ModuleOp>> 
       pairOp.second->erase();
       pairOp.first->erase();
     }
+    for (auto noChOp: noChOps) {
+      // llvm::outs() << *noChOp << "\n";
+      noChOp->erase();
+    }
+  }
+};
+
+// 将arith的constantOp（index）转成i64
+struct ConvertArithIndexToI64Pass : public PassWrapper<ConvertArithIndexToI64Pass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertArithIndexToI64Pass)
+
+  void runOnOperation() override {
+    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    module.walk([&](Operation *op) {
+      if (auto constantOp = dyn_cast<arith::ConstantOp>(op)) {
+        Type constantType = constantOp.getValue().getType();
+        if (constantType.isIndex()) {
+          auto indexValue = constantOp.getValue().cast<IntegerAttr>().getInt();
+          OpBuilder builder(op);
+          auto i64Op = builder.create<arith::ConstantOp>(constantOp.getLoc(), builder.getI64IntegerAttr(indexValue));
+          auto indexVal = builder.create<arith::IndexCastOp>(i64Op.getLoc(), builder.getIndexType(), i64Op);
+          constantOp.getResult().replaceAllUsesWith(indexVal.getResult());
+          constantOp.erase();
+        }
+      }
+    });
+  }
+};
+
+// 弃用
+struct ConvertArithConstantIndexToI64 : public OpRewritePattern<arith::ConstantOp> {
+  using OpRewritePattern<arith::ConstantOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(arith::ConstantOp constOp, PatternRewriter &rewriter) const final {
+    Type constType = constOp.getValue().getType();
+    if (constType.isIndex()) {
+      auto indexValue = constOp.getValue().cast<IntegerAttr>().getInt();
+      auto i64Op = rewriter.create<arith::ConstantOp>(constOp.getLoc(), rewriter.getI64IntegerAttr(indexValue));
+      auto indexVal = rewriter.create<arith::IndexCastOp>(i64Op.getLoc(), rewriter.getIndexType(), i64Op);
+      rewriter.replaceOp(constOp, indexVal);
+      return success();
+    } else {
+      return failure();
+    }
+  }
+};
+// 弃用
+struct ConvertIndexToI64Pass : public PassWrapper<ConvertIndexToI64Pass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertIndexToI64Pass)
+  
+  void runOnOperation() override {
+    RewritePatternSet patterns(&getContext());
+    ConversionTarget target(getContext());
+
+    patterns.add<ConvertArithConstantIndexToI64>(&getContext());
+
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
+      return signalPassFailure();
   }
 };
 
@@ -266,9 +328,12 @@ std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass() {
   return std::make_unique<ROCDLIdOpModifyPass>();
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> createMoveUnCCPass() {
-  return std::make_unique<MoveUnCCPass>();
+std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass() {
+  return std::make_unique<EraseRedundantUnCCastPass>();
 }
 
+std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass() {
+  return std::make_unique<ConvertArithIndexToI64Pass>();
+}
 
 }

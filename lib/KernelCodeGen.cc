@@ -38,6 +38,7 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
 
 bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
+  pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createLowerAffinePass());                     // affine -> scf/vector
   pm.addPass(mlir::createParallelLoopToGpuPass());               // scf.parallelOp -> gpu...
   pm.addPass(mlir::createCanonicalizerPass());
@@ -50,20 +51,25 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
 bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
-  pm.addPass(createParallelToROCDLPass());                      // 自定义 scf.parallelOp -> gpu.workitem/workgroup.id.x/y
+  pm.addPass(createParallelToROCDLPass());                      // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                  // scf -> cf
   pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
+  pm.addPass(createConvertArithIndexToI64Pass());
   pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
   pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
-  pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
 
-  // pm.addPass(mlir::createCanonicalizerPass());
+  pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
 
-  pm.addPass(createMoveUnCCPass());
+  pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
+  pm.addPass(createEraseRedundantUnCCastPass());
+
+  pm.addPass(mlir::createCSEPass());
+  pm.addPass(mlir::createSymbolDCEPass());
+
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
@@ -75,6 +81,15 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
     auto res_2 = secondLowering(mod, context);
     if (res_2) {
       mod.dump();
+      // std::map<std::string, int> opCountMap;
+      // mod.walk([&](Operation *op) {
+      //   std::string opName = op->getName().getStringRef().str();
+      //   opCountMap[opName]++;
+      // });
+      // llvm::outs() << "Operation counts:\n";
+      // for (const auto &entry : opCountMap) {
+      //   llvm::outs() << entry.first << ": " << entry.second << "\n";
+      // }
       if (auto llvm_mod = translateModuleToLLVMIR(mod)){
         llvm_mod->print(llvm::outs(), nullptr);
         return true;

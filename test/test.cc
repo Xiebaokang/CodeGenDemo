@@ -20,7 +20,7 @@ void test() {
 
   auto mods = generator.optimize(configs);
   for (auto mod: mods) {
-    mod.dump();
+    // mod.dump();
     auto res = generator.lowering(mod);
     std::cout << res << "\n";
   }
