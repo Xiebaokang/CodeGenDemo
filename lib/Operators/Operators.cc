@@ -54,6 +54,7 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, mlir::OpBuilder& builder
   
   funcOp->setAttr(std::string("func.state"), builder.getStringAttr("cpu"));
   funcOp->setAttr(std::string("func.op.name"), builder.getStringAttr(OpName));
+  funcOp->setAttr(std::string("llvm.bareptr"), builder.getStringAttr("true"));
   auto& entryBlock = funcOp.front();
   builder.setInsertionPointToStart(&entryBlock);
   builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());

@@ -36,6 +36,14 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
   return results;
 }
 
+bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
+  mlir::PassManager pm(&context);
+  pm.addPass(createAffineFullUnrollPass());
+  if (mlir::failed(pm.run(mod)))
+    return false;
+  return true;  
+}
+
 bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
   pm.addPass(mlir::createCSEPass());
@@ -55,7 +63,10 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                  // scf -> cf
   pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
-  pm.addPass(createConvertArithIndexToI64Pass());
+
+  // pm.addPass(createMemrefToLLVMPtrPass());
+  // pm.addPass(createConvertArithIndexToI64Pass());
+
   pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
   pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
@@ -65,8 +76,10 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createSymbolDCEPass());
 
   pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
-  pm.addPass(createEraseRedundantUnCCastPass());
+  // pm.addPass(createEraseRedundantUnCCastPass());
+  // pm.addPass(mlir::createReconcileUnrealizedCastsPass());       // 内置去除多余cast的pass
 
+  pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
 
@@ -76,29 +89,21 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 }
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
-  auto res_1 = firstLowering(mod, context);
-  if (res_1) {
-    auto res_2 = secondLowering(mod, context);
-    if (res_2) {
-      mod.dump();
-      // std::map<std::string, int> opCountMap;
-      // mod.walk([&](Operation *op) {
-      //   std::string opName = op->getName().getStringRef().str();
-      //   opCountMap[opName]++;
-      // });
-      // llvm::outs() << "Operation counts:\n";
-      // for (const auto &entry : opCountMap) {
-      //   llvm::outs() << entry.first << ": " << entry.second << "\n";
-      // }
-      if (auto llvm_mod = translateModuleToLLVMIR(mod)){
-        llvm_mod->print(llvm::outs(), nullptr);
-        return true;
-      }
-      return true;
-    }
-    return false;
-  }
-  return false;
+  mod.dump();
+  
+  transforms(mod, context);
+  mod.dump();
+
+  firstLowering(mod, context);
+  mod.dump();
+
+  secondLowering(mod, context);
+  mod.dump();
+
+  auto llvm_mod = translateModuleToLLVMIR(mod);
+  llvm_mod->print(llvm::outs(), nullptr);
+
+  return true;
 }
 
 }

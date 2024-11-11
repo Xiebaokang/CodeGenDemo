@@ -14,4 +14,6 @@ std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass();
 
+std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass();
+
 }

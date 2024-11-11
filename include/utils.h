@@ -101,6 +101,9 @@
 #include "llvm/ADT/Sequence.h"
 #include "mlir/Conversion/Passes.h.inc"
 
+// conversion
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+
 #include <iostream>
 #include <memory>
 #include <functional>

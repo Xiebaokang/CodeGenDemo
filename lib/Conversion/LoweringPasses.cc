@@ -144,7 +144,7 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     if (!boundsAttrName.empty() && funcOp) {
       if (auto attr = llvm::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr(boundsAttrName))) {
         int32_t maximum = attr[static_cast<uint32_t>(idOp.getDimension())];
-        newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI32ArrayAttr({0, maximum}));
+        newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI64ArrayAttr({0, maximum}));
       }
     }
     Value indexVal = rewriter.create<arith::IndexCastOp>(loc, rewriter.getIndexType(), newOp);
@@ -228,7 +228,7 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
   }
 };
 
-// 去除多余的unrealized_conversion_cast操作
+// 弃用，去除多余的unrealized_conversion_cast操作
 struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(EraseRedundantUnCCastPass)
   
@@ -265,7 +265,7 @@ struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass,
   }
 };
 
-// 将arith的constantOp（index）转成i64
+// 弃用，将arith的constantOp（index）转成i64
 struct ConvertArithIndexToI64Pass : public PassWrapper<ConvertArithIndexToI64Pass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertArithIndexToI64Pass)
 
@@ -319,21 +319,44 @@ struct ConvertIndexToI64Pass : public PassWrapper<ConvertIndexToI64Pass, Operati
   }
 };
 
+// affine 循环展开
+struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AffineFullUnrollPass)
+
+  void runOnOperation() override {
+    getOperation().walk([&] (affine::AffineForOp forOp){
+      if (auto unrollName = forOp->getAttr("affine.loop")) {
+        auto unrollAttr = llvm::dyn_cast<mlir::StringAttr>(unrollName);
+        // llvm::outs() << unrollAttr.getValue().str() << "\n";
+        if (unrollAttr.getValue().str() == "unroll") {
+          if (failed(affine::loopUnrollFull(forOp))) {
+            return signalPassFailure();
+          }
+        }
+      }
+    });
+  }
+};
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
 
-//  弃用，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
+// 弃用，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass() {
   return std::make_unique<ROCDLIdOpModifyPass>();
 }
-
+// 弃用
 std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass() {
   return std::make_unique<EraseRedundantUnCCastPass>();
 }
-
+// 弃用
 std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass() {
   return std::make_unique<ConvertArithIndexToI64Pass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass() {
+  return std::make_unique<AffineFullUnrollPass>();
 }
 
 }
