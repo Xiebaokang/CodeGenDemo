@@ -127,15 +127,16 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     auto loc = idOp->getLoc();
     MLIRContext *context = rewriter.getContext();
     Value newOp;
+    uint32_t bitWidth = 32;
     switch (idOp.getDimension()) {
     case gpu::Dimension::x:
-      newOp = rewriter.create<XOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<XOp>(loc, IntegerType::get(context, bitWidth));
       break;
     case gpu::Dimension::y:
-      newOp = rewriter.create<YOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<YOp>(loc, IntegerType::get(context, bitWidth));
       break;
     case gpu::Dimension::z:
-      newOp = rewriter.create<ZOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<ZOp>(loc, IntegerType::get(context, bitWidth));
       break;
     }
 
@@ -358,5 +359,7 @@ std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass() {
 std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass() {
   return std::make_unique<AffineFullUnrollPass>();
 }
+
+
 
 }

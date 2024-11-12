@@ -1,6 +1,6 @@
 # This file allows users to call find_package(MLIR) and pick up our targets.
 
-set(LLVM_INSTALL_DIR "/home/xiebaokang/projects/study/llvm/llvm-install")
+set(LLVM_INSTALL_DIR "~/llvm-install")
 # set(myLLVMProjectSrcDir "~/xushilong/KernelCodeGen/llvm-project")
 find_package(LLVM REQUIRED CONFIG
              HINTS "${LLVM_INSTALL_DIR}/lib/cmake/llvm")

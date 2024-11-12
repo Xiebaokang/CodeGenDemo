@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "\"*.h.inc\"": "\"cpp\"",
+        "\"*.cpp.inc\"": "\"cpp\"",
+        "\"*.hpp\"": "\"cpp\"",
+        "\"*.cxx\"": "\"cpp\"",
+        "*.inc": "cpp",
+        "*.tcc": "cpp"
+    }
+}

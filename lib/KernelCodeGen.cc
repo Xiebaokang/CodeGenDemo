@@ -38,7 +38,7 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
 
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
-  pm.addPass(createAffineFullUnrollPass());
+  // pm.addPass(createAffineFullUnrollPass());
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
@@ -66,16 +66,22 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
   // pm.addPass(createMemrefToLLVMPtrPass());
   // pm.addPass(createConvertArithIndexToI64Pass());
-
-  pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
+  ArithToLLVMConversionPassOptions option;
+  option.indexBitwidth = 32;
+  pm.addPass(mlir::createArithToLLVMConversionPass(option));           // arith -> llvm
   pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
-  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
+  FinalizeMemRefToLLVMConversionPassOptions op2;
+  op2.indexBitwidth = 32;
+  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(op2));  // memref -> llvm
 
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
 
-  pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
+  ConvertFuncToLLVMPassOptions op3;
+  op3.indexBitwidth = 32;
+  op3.useBarePtrCallConv = true;
+  pm.addPass(mlir::createConvertFuncToLLVMPass(op3));               // func -> llvm
   // pm.addPass(createEraseRedundantUnCCastPass());
   // pm.addPass(mlir::createReconcileUnrealizedCastsPass());       // 内置去除多余cast的pass
 
