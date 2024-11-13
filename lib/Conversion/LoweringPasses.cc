@@ -127,7 +127,7 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     auto loc = idOp->getLoc();
     MLIRContext *context = rewriter.getContext();
     Value newOp;
-    uint32_t bitWidth = 32;
+    uint32_t bitWidth = INDEX_BIT_WIDTH;
     switch (idOp.getDimension()) {
     case gpu::Dimension::x:
       newOp = rewriter.create<XOp>(loc, IntegerType::get(context, bitWidth));

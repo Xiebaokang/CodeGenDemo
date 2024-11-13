@@ -1,5 +1,5 @@
 #include "KernelCodeGen.h"
-
+#include "Target/HSACOTranslation.h"
 namespace KernelCodeGen {
 
 std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
@@ -58,30 +58,37 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 }
 
 bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
+  int indexBitWidth = INDEX_BIT_WIDTH;
   mlir::PassManager pm(&context);
   pm.addPass(createParallelToROCDLPass());                      // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                  // scf -> cf
   pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
-
+  
   // pm.addPass(createMemrefToLLVMPtrPass());
   // pm.addPass(createConvertArithIndexToI64Pass());
+
   ArithToLLVMConversionPassOptions option;
-  option.indexBitwidth = 32;
+  option.indexBitwidth = 64;
+  mlir::ConvertIndexToLLVMPassOptions op4;
+  op4.indexBitwidth = 64;
+  pm.addPass(mlir::createConvertIndexToLLVMPass(op4)) ;
   pm.addPass(mlir::createArithToLLVMConversionPass(option));           // arith -> llvm
   pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
-  FinalizeMemRefToLLVMConversionPassOptions op2;
-  op2.indexBitwidth = 32;
-  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(op2));  // memref -> llvm
-
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
 
+
   ConvertFuncToLLVMPassOptions op3;
-  op3.indexBitwidth = 32;
+  op3.indexBitwidth = indexBitWidth;
   op3.useBarePtrCallConv = true;
   pm.addPass(mlir::createConvertFuncToLLVMPass(op3));               // func -> llvm
+  FinalizeMemRefToLLVMConversionPassOptions op2;
+  op2.indexBitwidth = indexBitWidth;
+  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(op2));  // memref -> llvm
+
+
   // pm.addPass(createEraseRedundantUnCCastPass());
   // pm.addPass(mlir::createReconcileUnrealizedCastsPass());       // 内置去除多余cast的pass
 
@@ -93,6 +100,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
     return false;
   return true;  
 }
+
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   mod.dump();
