@@ -185,7 +185,7 @@ namespace KernelCodeGen
 
         // create unique dir for kernel's binary and hsaco
         std::error_code ec;
-        std::string kernel_name_base = "kcg_kernel_";
+        std::string kernel_name_base = "kcg_kernel";
         std::filesystem::path tmp = std::filesystem::temp_directory_path();
         std::filesystem::path kernel_dir_base(kernel_name_base);
         llvm::SmallString<256> unique_dir;
