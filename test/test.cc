@@ -2,11 +2,13 @@
 #include <string>
 #include <vector>
 #include "KernelCodeGen.h"
+#include "Target/HSACOTranslation.h"
 
 using namespace KernelCodeGen;
 using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
 
 void test() {
+  #if 1
   KernelCodeGenerator generator("CUDA");
 
   Config configs = {
@@ -24,7 +26,10 @@ void test() {
     auto res = generator.lowering(mod);
     std::cout << res << "\n";
   }
-
+  #endif
+  const char* filePath = "/home/pangyunfei/xushilong/CodeGenDemo/llvm_ir.ll";
+  const char* filePath64 = "/home/pangyunfei/xushilong/CodeGenDemo/llvm-ir.ll";
+  generateAmdgcnAndHsacoFromLLIRFile(filePath64,"gfx906","amdgcn-amd-amdhsa","");
 
 }
 

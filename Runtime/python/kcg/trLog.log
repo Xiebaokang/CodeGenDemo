@@ -1,0 +1,8 @@
+[D] signatrue =  {0: '*fp32', 1: '*fp32', 2: '*fp32'}
+[D] run
+parsed info: name = Matmul_m1024n1024k1024_n9hNXH23O6jBoXmTORYQ
+parsed info: data = /home/pangyunfei/xushilong/KernelCodeGen/kernel.hsaco
+parsed info: data_size = 53
+parsed info: shared = 50000
+parsed info: device = 0
+====1

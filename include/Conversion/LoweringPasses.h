@@ -6,6 +6,8 @@ using namespace mlir;
 
 namespace KernelCodeGen {
 
+static const int INDEX_BIT_WIDTH = 32;
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass();  // no use

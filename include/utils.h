@@ -121,10 +121,10 @@ enum class Target {
 
 enum class MemorySpace {
   global = 1,
-  shared = 2,
-  local = 3,
+  shared = 3,
+  local = 5,
   constant = 4,
-  unallocated = 5,
+  unallocated = 7,
   inplace = 6,
 };
 

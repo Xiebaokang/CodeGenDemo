@@ -1,5 +1,5 @@
 #include "KernelCodeGen.h"
-
+#include "Target/HSACOTranslation.h"
 namespace KernelCodeGen {
 
 std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
@@ -38,7 +38,7 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
 
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
-  pm.addPass(createAffineFullUnrollPass());
+  // pm.addPass(createAffineFullUnrollPass());
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
@@ -58,6 +58,7 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 }
 
 bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
+  int indexBitWidth = INDEX_BIT_WIDTH;
   mlir::PassManager pm(&context);
   pm.addPass(createParallelToROCDLPass());                      // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
@@ -112,6 +113,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
     return false;
   return true;  
 }
+
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   // mod.dump();
