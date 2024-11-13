@@ -129,13 +129,13 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     Value newOp;
     switch (idOp.getDimension()) {
     case gpu::Dimension::x:
-      newOp = rewriter.create<XOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<XOp>(loc, IntegerType::get(context, 32));
       break;
     case gpu::Dimension::y:
-      newOp = rewriter.create<YOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<YOp>(loc, IntegerType::get(context, 32));
       break;
     case gpu::Dimension::z:
-      newOp = rewriter.create<ZOp>(loc, IntegerType::get(context, 64));
+      newOp = rewriter.create<ZOp>(loc, IntegerType::get(context, 32));
       break;
     }
 
@@ -144,7 +144,7 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     if (!boundsAttrName.empty() && funcOp) {
       if (auto attr = llvm::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr(boundsAttrName))) {
         int32_t maximum = attr[static_cast<uint32_t>(idOp.getDimension())];
-        newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI64ArrayAttr({0, maximum}));
+        newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI32ArrayAttr({0, maximum}));
       }
     }
     Value indexVal = rewriter.create<arith::IndexCastOp>(loc, rewriter.getIndexType(), newOp);
@@ -338,6 +338,84 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
   }
 };
 
+
+struct VectorToLLVMPass : public PassWrapper<VectorToLLVMPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VectorToLLVMPass)
+
+  VectorToLLVMPass(unsigned indexBitWidth_=32) : indexBitWidth(indexBitWidth_) {};
+
+  unsigned indexBitWidth;
+
+  void runOnOperation() override {
+    LLVMConversionTarget target(getContext());
+    RewritePatternSet patterns(&getContext());
+
+    LowerToLLVMOptions options(&getContext());
+    options.overrideIndexBitwidth(indexBitWidth);
+
+    LLVMTypeConverter converter(&getContext(), options);
+    mlir::populateVectorToLLVMConversionPatterns(converter, patterns, false, true);
+    // mlir::populateVectorToLLVMMatrixConversionPatterns(converter, patterns);
+
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
+      signalPassFailure();
+  }
+};
+
+struct ReplacePtrtointAndCallOp : public OpRewritePattern<LLVM::PtrToIntOp> {
+  using OpRewritePattern<LLVM::PtrToIntOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(LLVM::PtrToIntOp ptrOp, PatternRewriter &rewriter) const final {
+
+    return failure();
+  }
+};
+
+
+struct ModifyMallocFuncAndCallPass : public PassWrapper<ModifyMallocFuncAndCallPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ModifyMallocFuncAndCallPass)
+
+  void runOnOperation() override {
+    LLVM::LLVMFuncOp newFuncOp = mallocFuncArgI32ToI64(getOperation());
+
+    ConversionTarget target(getContext());
+    RewritePatternSet patterns(&getContext());
+
+    patterns.add<ReplacePtrtointAndCallOp>(&getContext());
+
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
+      signalPassFailure();
+  }
+
+  private:
+
+    LLVM::LLVMFuncOp mallocFuncArgI32ToI64(Operation *op) {
+      auto module = llvm::dyn_cast<ModuleOp>(op);
+      for (Operation &op : module.getBody()->getOperations()) {
+        if (auto funcOp = llvm::dyn_cast<LLVM::LLVMFuncOp>(&op)) {
+          auto funcName = funcOp.getName();
+          if (funcName != "malloc") {
+            continue;
+          } else {
+            LLVM::LLVMFunctionType funcType = funcOp.getFunctionType();
+            auto argNnm = funcType.getNumParams();
+            bool isI64 = funcType.getParams()[0].isInteger(64);
+            if (argNnm == 1 && isI64) {
+              return funcOp;
+            }
+          }
+        }
+      }
+      // 如果循环结束，则肯定没有malloc i64函数
+      OpBuilder b(module.getBodyRegion());
+      MLIRContext *context = module->getContext();
+      auto newFuncType = LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(context), {IntegerType::get(context, 64)}, /*opaquePointers*/true);
+      return b.create<LLVM::LLVMFuncOp>(module->getLoc(), "malloc", newFuncType);
+    }
+
+};
+
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
@@ -357,6 +435,14 @@ std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass() {
 
 std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass() {
   return std::make_unique<AffineFullUnrollPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBitWidth) {
+  return std::make_unique<VectorToLLVMPass>(indexBitWidth);
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createModifyMallocFuncAndCallPass() {
+  return std::make_unique<ModifyMallocFuncAndCallPass>();
 }
 
 }

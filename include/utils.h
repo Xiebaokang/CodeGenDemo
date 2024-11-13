@@ -60,6 +60,7 @@
 #include "mlir/Dialect/GPU/IR/GPUDialect.h"
 #include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/FunctionCallUtils.h"
 
 // IR Infrastructure
 #include "mlir/IR/PatternMatch.h"

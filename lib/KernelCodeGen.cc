@@ -62,26 +62,51 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(createParallelToROCDLPass());                      // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                  // scf -> cf
-  pm.addPass(mlir::createConvertControlFlowToLLVMPass());        // cf -> llvm
+
+  ConvertControlFlowToLLVMPassOptions cfOptions;
+  cfOptions.indexBitwidth = 32;
+  
+  pm.addPass(mlir::createConvertControlFlowToLLVMPass(cfOptions));        // cf -> llvm
 
   // pm.addPass(createMemrefToLLVMPtrPass());
-  // pm.addPass(createConvertArithIndexToI64Pass());
+  // pm.addPass(createConvertArithIndexToI64Pass());  
 
-  pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
-  pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
-  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
+  // -----------------------------------------------------------------------------------
+
+  // pm.addPass(mlir::createArithToLLVMConversionPass());           // arith -> llvm
+  // pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
+  // pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass());  // memref -> llvm
+  // ------------------------------------------------------------------------------------
+
+  ArithToLLVMConversionPassOptions arithOptions;
+  arithOptions.indexBitwidth = 32;
+  pm.addPass(mlir::createArithToLLVMConversionPass(arithOptions));           // arith -> llvm
+
+  pm.addPass(createVectorToLLVMPass(32)); 
+  // pm.addPass(mlir::createConvertVectorToLLVMPass());             // vector -> llvm
+
+  FinalizeMemRefToLLVMConversionPassOptions memrefOptions;
+  memrefOptions.indexBitwidth = 32;
+  memrefOptions.useAlignedAlloc = true;
+  pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(memrefOptions));  // memref -> llvm
+  // --------------------------------------------------------------------------------------
 
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
 
-  pm.addPass(mlir::createConvertFuncToLLVMPass());               // func -> llvm
+  ConvertFuncToLLVMPassOptions funcOptions;
+  funcOptions.indexBitwidth = 32;
+  funcOptions.useBarePtrCallConv = true;
+  pm.addPass(mlir::createConvertFuncToLLVMPass(funcOptions));               // func -> llvm
   // pm.addPass(createEraseRedundantUnCCastPass());
   // pm.addPass(mlir::createReconcileUnrealizedCastsPass());       // 内置去除多余cast的pass
 
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
+  // pm.addPass(createModifyMallocFuncAndCallPass());
+  // ./mlir-translate /home/pangyunfei/xie/CodeGenDemo/build/llvm-dialect.mlir -mlir-to-llvmir > /home/pangyunfei/xie/CodeGenDemo/build/llvm-ir.ll
 
   if (mlir::failed(pm.run(mod)))
     return false;
@@ -89,10 +114,10 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 }
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
-  mod.dump();
+  // mod.dump();
   
-  transforms(mod, context);
-  mod.dump();
+  // transforms(mod, context);
+  // mod.dump();
 
   firstLowering(mod, context);
   mod.dump();

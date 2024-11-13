@@ -6,7 +6,7 @@ project(KernelCodeGen LANGUAGES CXX C)    # delete CUDA
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
-set(LLVM_BUILD_LIBRARY_DIR /home/xiebaokang/projects/study/llvm/rocm-llvm/build/lib)
+set(LLVM_BUILD_LIBRARY_DIR /home/pangyunfei/rocm-llvm-project/build/lib)
 message(STATUS "LLVM_BUILD_LIBRARY_DIR ${LLVM_BUILD_LIBRARY_DIR}")
 
 # set(MLIR_CONFIG_FILE_DIR /home/pangyunfei/rocm-llvm-project/build/lib/cmake/mlir)

@@ -16,4 +16,8 @@ std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass();
 
+std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBitWidth);
+
+std::unique_ptr<OperationPass<ModuleOp>> createModifyMallocFuncAndCallPass();
+
 }
