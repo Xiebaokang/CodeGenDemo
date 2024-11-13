@@ -12,14 +12,14 @@ std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass();  // no use
 
-std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass();
+std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass();  // no use
 
-std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass();
+std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass();  // no use
 
 std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBitWidth);
 
-std::unique_ptr<OperationPass<ModuleOp>> createModifyMallocFuncAndCallPass();
+std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass();
 
 }

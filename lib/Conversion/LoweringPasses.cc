@@ -195,7 +195,7 @@ struct ParallelToROCDLPass : public PassWrapper<ParallelToROCDLPass, OperationPa
 };
 
 
-// 弃用，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
+// ***弃用***，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp，主要是添加属性range
 struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ROCDLIdOpModifyPass)
   
@@ -229,7 +229,7 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
   }
 };
 
-// 弃用，去除多余的unrealized_conversion_cast操作
+// ***弃用***，去除多余的unrealized_conversion_cast操作/因为内置有去除函数
 struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(EraseRedundantUnCCastPass)
   
@@ -266,7 +266,7 @@ struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass,
   }
 };
 
-// 弃用，将arith的constantOp（index）转成i64
+// ***弃用***，将arith的constantOp（index）转成i64
 struct ConvertArithIndexToI64Pass : public PassWrapper<ConvertArithIndexToI64Pass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertArithIndexToI64Pass)
 
@@ -288,7 +288,7 @@ struct ConvertArithIndexToI64Pass : public PassWrapper<ConvertArithIndexToI64Pas
   }
 };
 
-// 弃用
+// ***弃用*** 没有使用，和上面一样的功能
 struct ConvertArithConstantIndexToI64 : public OpRewritePattern<arith::ConstantOp> {
   using OpRewritePattern<arith::ConstantOp>::OpRewritePattern;
 
@@ -305,7 +305,7 @@ struct ConvertArithConstantIndexToI64 : public OpRewritePattern<arith::ConstantO
     }
   }
 };
-// 弃用
+// ***弃用***
 struct ConvertIndexToI64Pass : public PassWrapper<ConvertIndexToI64Pass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertIndexToI64Pass)
   
@@ -339,7 +339,7 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
   }
 };
 
-
+// 将memref lowering到llvm上，因为 passes.h.inc中的base类没有提供可以选择indexBitWidth的options，所以自己写了一个
 struct VectorToLLVMPass : public PassWrapper<VectorToLLVMPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VectorToLLVMPass)
 
@@ -363,56 +363,108 @@ struct VectorToLLVMPass : public PassWrapper<VectorToLLVMPass, OperationPass<Mod
   }
 };
 
+// ***弃用*** 使用函数代替了没有写模式匹配了，因为一直报错
 struct ReplacePtrtointAndCallOp : public OpRewritePattern<LLVM::PtrToIntOp> {
   using OpRewritePattern<LLVM::PtrToIntOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(LLVM::PtrToIntOp ptrOp, PatternRewriter &rewriter) const final {
+  explicit ReplacePtrtointAndCallOp(MLIRContext *context, LLVM::LLVMFuncOp newFuncOp_) : 
+            OpRewritePattern<LLVM::PtrToIntOp>(context), newFuncOp(newFuncOp_) {};
 
-    return failure();
+  LogicalResult matchAndRewrite(LLVM::PtrToIntOp ptrOp, PatternRewriter &rewriter) const final {
+    // get ptrop & new ptrop
+    Value argPtr = ptrOp.getArg();
+    auto newPtrOp = rewriter.create<LLVM::PtrToIntOp>(ptrOp.getLoc(), rewriter.getIntegerType(64), argPtr);
+    auto users = ptrOp.getResult().getUsers();
+    for (auto user : users) {
+      if (auto callOp = llvm::dyn_cast<LLVM::CallOp>(user)) {
+        rewriter.setInsertionPointAfter(callOp);
+        auto newCallOp = rewriter.create<LLVM::CallOp>(callOp->getLoc(), newFuncOp, ValueRange({newPtrOp.getResult()}));
+        // callOp.getResult().replaceAllUsesWith(newCallOp.getResult());
+        // callOp.erase();
+        rewriter.replaceOp(callOp, newCallOp);
+        // rewriter.eraseOp(callOp);
+      }
+    }
+    // ptrOp.erase();
+    rewriter.replaceOp(ptrOp, newPtrOp);
+    return success();
   }
+
+  private:
+  LLVM::LLVMFuncOp newFuncOp;
 };
 
-
-struct ModifyMallocFuncAndCallPass : public PassWrapper<ModifyMallocFuncAndCallPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ModifyMallocFuncAndCallPass)
+// 替换malloc(i32) -> malloc(i64) / ptrtointOp & callOp 也替换成符合i64的操作
+struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI32ToI64Pass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MallocFuncOpArgTypeI32ToI64Pass)
 
   void runOnOperation() override {
-    LLVM::LLVMFuncOp newFuncOp = mallocFuncArgI32ToI64(getOperation());
-
-    ConversionTarget target(getContext());
-    RewritePatternSet patterns(&getContext());
-
-    patterns.add<ReplacePtrtointAndCallOp>(&getContext());
-
-    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
-      signalPassFailure();
+    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto reuslt = createI64MallocFuncOp(module);
+    replacePtrtointAndCallOp(module, reuslt.first);   // create i64 malloc
+    deleteI32MallocFuncOp(reuslt.second);   // erase i32 malloc
   }
 
   private:
 
-    LLVM::LLVMFuncOp mallocFuncArgI32ToI64(Operation *op) {
-      auto module = llvm::dyn_cast<ModuleOp>(op);
-      for (Operation &op : module.getBody()->getOperations()) {
-        if (auto funcOp = llvm::dyn_cast<LLVM::LLVMFuncOp>(&op)) {
-          auto funcName = funcOp.getName();
-          if (funcName != "malloc") {
-            continue;
-          } else {
-            LLVM::LLVMFunctionType funcType = funcOp.getFunctionType();
-            auto argNnm = funcType.getNumParams();
-            bool isI64 = funcType.getParams()[0].isInteger(64);
-            if (argNnm == 1 && isI64) {
-              return funcOp;
-            }
+  void replacePtrtointAndCallOp(ModuleOp &module, LLVM::LLVMFuncOp &mallocFuncOp) {
+    if (!mallocFuncOp) return;
+    SmallVector<LLVM::PtrToIntOp> ptrOps;
+    module.walk([&](LLVM::PtrToIntOp ptrOp) {
+      ptrOps.push_back(ptrOp);
+    });
+    
+    for (auto ptrOp: ptrOps) {
+      Value argPtr = ptrOp.getArg();
+      OpBuilder buidler(ptrOp);
+      auto newPtrOp = buidler.create<LLVM::PtrToIntOp>(ptrOp.getLoc(), buidler.getIntegerType(64), argPtr);
+
+      auto users = ptrOp.getResult().getUsers();
+      for (auto user : users) {
+        if (auto callOp = llvm::dyn_cast<LLVM::CallOp>(user)) {
+          buidler.setInsertionPointAfter(callOp);
+          auto newCallOp = buidler.create<LLVM::CallOp>(callOp->getLoc(), mallocFuncOp, ValueRange({newPtrOp.getResult()}));
+          callOp.getResult().replaceAllUsesWith(newCallOp.getResult());
+          callOp.erase();
+          // rewriter.replaceOp(callOp, newCallOp);
+          // rewriter.eraseOp(callOp);
+        }
+      }
+      ptrOp.erase();
+      // rewriter.replaceOp(ptrOp, newPtrOp);
+      // llvm::outs() <<newPtrOp << "\n";
+    }
+  }
+
+  std::pair<LLVM::LLVMFuncOp, LLVM::LLVMFuncOp> createI64MallocFuncOp(ModuleOp &module) {
+    for (Operation &op : module.getBody()->getOperations()) {
+      if (auto funcOp = llvm::dyn_cast<LLVM::LLVMFuncOp>(&op)) {
+        if (funcOp.getName() != "malloc") {
+          continue;
+        } else {
+          LLVM::LLVMFunctionType funcType = funcOp.getFunctionType();
+          if (funcType.getNumParams() == 1 && funcType.getParams()[0].isInteger(64)) {
+            return std::make_pair(funcOp, nullptr);   // malloc本身就是i64的func
+
+          } else if (funcType.getNumParams() == 1 && funcType.getParams()[0].isInteger(32)) {
+            OpBuilder b(module.getBodyRegion());
+            MLIRContext *context = module->getContext();
+            auto newFuncType = LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(context), 
+                                      {IntegerType::get(context, 64)}, /*opaquePointers*/false);
+            auto newFuncOp = b.create<LLVM::LLVMFuncOp>(module->getLoc(), "malloc", newFuncType);
+            return std::make_pair(newFuncOp, funcOp);   // malloc是i32的func，创建新的true
           }
         }
       }
-      // 如果循环结束，则肯定没有malloc i64函数
-      OpBuilder b(module.getBodyRegion());
-      MLIRContext *context = module->getContext();
-      auto newFuncType = LLVM::LLVMFunctionType::get(LLVM::LLVMPointerType::get(context), {IntegerType::get(context, 64)}, /*opaquePointers*/true);
-      return b.create<LLVM::LLVMFuncOp>(module->getLoc(), "malloc", newFuncType);
     }
+    return std::make_pair(nullptr, nullptr);
+  }
+
+  void deleteI32MallocFuncOp(LLVM::LLVMFuncOp &funcOp) {
+    if (funcOp){
+      funcOp.erase();
+    }
+  }
 
 };
 
@@ -421,15 +473,15 @@ std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
 
-// 弃用，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
+// ***弃用***，自己写了一个从gpu到rocdl的pass，转了idop和BarrierOp
 std::unique_ptr<OperationPass<ModuleOp>> createROCDLIdOpModifyPass() {
   return std::make_unique<ROCDLIdOpModifyPass>();
 }
-// 弃用
+// ***弃用***
 std::unique_ptr<OperationPass<ModuleOp>> createEraseRedundantUnCCastPass() {
   return std::make_unique<EraseRedundantUnCCastPass>();
 }
-// 弃用
+// ***弃用***
 std::unique_ptr<OperationPass<ModuleOp>> createConvertArithIndexToI64Pass() {
   return std::make_unique<ConvertArithIndexToI64Pass>();
 }
@@ -442,8 +494,8 @@ std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBi
   return std::make_unique<VectorToLLVMPass>(indexBitWidth);
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> createModifyMallocFuncAndCallPass() {
-  return std::make_unique<ModifyMallocFuncAndCallPass>();
+std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass() {
+  return std::make_unique<MallocFuncOpArgTypeI32ToI64Pass>();
 }
 
 }
