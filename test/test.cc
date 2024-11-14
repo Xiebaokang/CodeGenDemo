@@ -32,6 +32,7 @@ void test(const char* llirPath , bool amendLLIR = true) {
     std::cout << res << "\n";
   }
   #endif
+  
   if(amendLLIR){
     generateAmdgcnAndHsacoFromLLIRFile(llirPath,"gfx906","amdgcn-amd-amdhsa","",&metadata);
   }

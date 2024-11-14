@@ -11,7 +11,8 @@ std::string randName(int length) {
   for (int i = 0; i < length; ++i) {
       randomString += characters[distribution(generator)];
   }
-  return randomString;
+  // return randomString;
+  return "randomString";
 }
 
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
@@ -55,6 +56,8 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, mlir::OpBuilder& builder
   funcOp->setAttr(std::string("func.state"), builder.getStringAttr("cpu"));
   funcOp->setAttr(std::string("func.op.name"), builder.getStringAttr(OpName));
   funcOp->setAttr(std::string("llvm.bareptr"), builder.getStringAttr("true"));
+  funcOp->setAttr(std::string(AttrVisibility), builder.getStringAttr("public"));
+  funcOp->setAttr(std::string(AttrKernelFunc), builder.getI32IntegerAttr(1));
   auto& entryBlock = funcOp.front();
   builder.setInsertionPointToStart(&entryBlock);
   builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());

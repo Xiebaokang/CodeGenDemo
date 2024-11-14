@@ -7,15 +7,15 @@ declare void @free(ptr)
 
 declare ptr @aligned_alloc(i32, i32)
 
-define void @Matmul_m1024n1024k1024_hZ6LLvE4c3lRy32ZTNZ9(ptr addrspace(1) %0, ptr addrspace(1) %1, ptr addrspace(1) %2) {
-  %4 = call i32 @llvm.amdgcn.workgroup.id.x(), !range !1
-  %5 = call i32 @llvm.amdgcn.workgroup.id.y(), !range !1
+define void @Matmul_m1024n1024k1024_randomString(ptr addrspace(1) %0, ptr addrspace(1) %1, ptr addrspace(1) %2) {
+  %4 = call i32 @llvm.amdgcn.workgroup.id.x(), !range !2
+  %5 = call i32 @llvm.amdgcn.workgroup.id.y(), !range !2
   %6 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i32))
   %7 = addrspacecast ptr %6 to ptr addrspace(3)
   %8 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i32))
   %9 = addrspacecast ptr %8 to ptr addrspace(3)
-  %10 = call i32 @llvm.amdgcn.workitem.id.x(), !range !2
-  %11 = call i32 @llvm.amdgcn.workitem.id.y(), !range !2
+  %10 = call i32 @llvm.amdgcn.workitem.id.x(), !range !3
+  %11 = call i32 @llvm.amdgcn.workitem.id.y(), !range !3
   %12 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i32))
   %13 = addrspacecast ptr %12 to ptr addrspace(5)
   %14 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i32))
@@ -541,7 +541,9 @@ attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memo
 attributes #1 = { convergent nocallback nofree nounwind willreturn }
 
 !llvm.module.flags = !{!0}
+!nvvm.annotations = !{!1}
 
 !0 = !{i32 2, !"Debug Info Version", i32 3}
-!1 = !{i32 0, i32 8}
-!2 = !{i32 0, i32 16}
+!1 = !{ptr @Matmul_m1024n1024k1024_randomString, !"kernel", i32 1}
+!2 = !{i32 0, i32 8}
+!3 = !{i32 0, i32 16}

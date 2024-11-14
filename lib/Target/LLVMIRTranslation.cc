@@ -48,7 +48,7 @@ static void amendLLVMFunc(llvm::Function *func, const NVVMMetadata &metadata,
 
   if (metadata.isKernel) {
     switch (target) {
-    case Target::CUDA : {
+    case Target::CUDA: {
       llvm::Metadata *mdArgs[] = {
           llvm::ValueAsMetadata::get(func), llvm::MDString::get(ctx, "kernel"),
           llvm::ValueAsMetadata::get(
@@ -77,17 +77,20 @@ static void amendLLVMFunc(llvm::Function *func, const NVVMMetadata &metadata,
   }
 }
 
+
 static void
 extractNVVMMetadata(mlir::ModuleOp module,
-                    llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata> *dic) {
+                    llvm::DenseMap<llvm::StringRef, NVVMMetadata> *dic) {
+  llvm::outs() << "extractNVVMMetadata[1]\n";
+  llvm::outs().flush();
   for (auto op : module.getOps<mlir::LLVM::LLVMFuncOp>()) {
     NVVMMetadata meta;
 
     bool hasMetadata{};
 
     // maxntid
-    if (auto attr = op->getAttrOfType<::mlir::ArrayAttr>("nvvm.maxntid")) {
-      llvm::transform(attr.getAsValueRange<::mlir::IntegerAttr>(),
+    if (auto attr = op->getAttrOfType<mlir::ArrayAttr>("nvvm.maxntid")) {
+      llvm::transform(attr.getAsValueRange<mlir::IntegerAttr>(),
                       std::back_inserter(meta.maxntid),
                       [](llvm::APInt value) { return value.getZExtValue(); });
       hasMetadata = true;
@@ -95,12 +98,16 @@ extractNVVMMetadata(mlir::ModuleOp module,
 
     // kernel
     if (op->hasAttr("nvvm.kernel")) {
+      llvm::outs() << "[D] is Kernel";
+      llvm::outs().flush();
       meta.isKernel = true;
       hasMetadata = true;
     }
 
-    if (hasMetadata)
+    if (hasMetadata){
       dic->try_emplace(op.getNameAttr().strref(), std::move(meta));
+      llvm::outs() << "add meta: " << op.getNameAttr().strref() << "\n"; llvm::outs().flush();
+    }
   }
 }
 

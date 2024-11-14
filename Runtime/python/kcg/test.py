@@ -13,8 +13,8 @@ import sys
 
 
 class kcgData:
-    hsacoPath='/home/pangyunfei/xushilong/KernelCodeGen/kernel.hsaco'
-    funName = 'Matmul_m1024n1024k1024_n9hNXH23O6jBoXmTORYQ'
+    hsacoPath='/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/kcg_kernel-7a3f65.hsaco'
+    funName = 'Matmul_m1024n1024k1024_randomString'
 
 class tritonData_finalLL_opt: # OK
     funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
@@ -66,7 +66,7 @@ Aborted (core dumped)
 
 
 
-dataCollection = tritonData_midLL_nopt
+dataCollection = kcgData
 
 inConfig = UserInputs(dataCollection.hsacoPath,dataCollection.funName)
 inConfig.operatorKind = EnumOperator.Matmul
@@ -95,13 +95,13 @@ c = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
 d = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
 M, K = a.shape
 K, N = b.shape
-# o.run(a,b,c)
+o.run(a,b,c)
 
-o.run(a,b,c,
-      M,N,K, a.stride(0), a.stride(1),  
-        b.stride(0), b.stride(1),  
-        c.stride(0), c.stride(1),  
-    )
+# o.run(a,b,c,
+#       M,N,K, a.stride(0), a.stride(1),  
+#         b.stride(0), b.stride(1),  
+#         c.stride(0), c.stride(1),  
+#     )
 print(c)
 d = torch.matmul(a,b)
 if torch.allclose(c,d,atol=1e-2,rtol=1e-2):

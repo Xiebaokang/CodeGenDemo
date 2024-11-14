@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _utils_h_
+#define _utils_h_
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -147,6 +148,11 @@ struct NVVMMetadata {
   // Free to extend with other information.
 };
 
+
+#define AttrKernelFunc "nvvm.kernel"
+#define AttrVisibility "sym_visibility" 
+
 }
 
 
+#endif
