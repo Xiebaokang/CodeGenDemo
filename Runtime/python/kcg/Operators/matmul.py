@@ -43,16 +43,16 @@ def _matmul(a, b):
     # 1D launch kernel where each block gets its own program.
     
     # grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']), )
-    return _matmul_kernel(
-        a, b, c
-    )
-    # return _matmul_kernel_triton(
-    #     a, b, c,  #
-    #     M, N, K,  #
-    #     a.stride(0), a.stride(1),  #
-    #     b.stride(0), b.stride(1),  #
-    #     c.stride(0), c.stride(1),  #
+    # return _matmul_kernel(
+    #     a, b, c
     # )
+    return _matmul_kernel_triton(
+        a, b, c,  #
+        M, N, K,  #
+        a.stride(0), a.stride(1),  #
+        b.stride(0), b.stride(1),  #
+        c.stride(0), c.stride(1),  #
+    )
 
 
 

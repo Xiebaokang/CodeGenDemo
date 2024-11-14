@@ -71,7 +71,7 @@
 #include <iterator>
 #include <fstream>
 #include <iostream>
-
+#include "Target/LLVMIRTranslation.h"
 using namespace mlir;
 
 namespace KernelCodeGen
@@ -318,7 +318,7 @@ namespace KernelCodeGen
     
     std::tuple<std::string, std::string> generateAmdgcnAndHsaco(
         const std::string llvmIR, std::string gfx_arch, std::string gfx_triple,
-        std::string gfx_features)
+        std::string gfx_features, llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata = nullptr)
     {
         llvm::LLVMContext context;
         std::unique_ptr<llvm::MemoryBuffer> buffer =
@@ -326,6 +326,13 @@ namespace KernelCodeGen
         llvm::SMDiagnostic error;
         std::unique_ptr<llvm::Module> module =
             llvm::parseIR(buffer->getMemBufferRef(), error, context);
+        if(metadata != nullptr){
+            std::cout << "[D] optimizeLLVMIRModule" << std::endl;
+            optimizeLLVMIRModule(module.get(),metadata,Target::ROCm);
+        }
+        else{
+            std::cout << "[D] NotOptimizeLLVMIRModule" << std::endl;
+        }
         // translate module to HSACO
         auto hsacoCode = translateLLVMIRToHSACO(
             *module, gfx_arch, gfx_triple, gfx_features);
@@ -336,7 +343,8 @@ namespace KernelCodeGen
         const char* filePath,
         const std::string& gfx_arch,
         const std::string& gfx_triple,
-        const std::string& gfx_features
+        const std::string& gfx_features,
+        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata
         )
     {
         std::ifstream file(filePath);
@@ -353,7 +361,7 @@ namespace KernelCodeGen
             content += line + "\n";
         }
         file.close();
-        auto ret = generateAmdgcnAndHsaco(content,gfx_arch,gfx_triple,gfx_features);
+        auto ret = generateAmdgcnAndHsaco(content,gfx_arch,gfx_triple,gfx_features,metadata);
         std::string amdgcn = std::get<0>(ret);
         std::string hsacoPath = std::get<1>(ret);
         std::ofstream outasm("/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn");

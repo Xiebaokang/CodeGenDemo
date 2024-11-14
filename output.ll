@@ -5,24 +5,26 @@ declare ptr @malloc(i64)
 
 declare void @free(ptr)
 
-define void @Matmul_m1024n1024k1024_n9hNXH23O6jBoXmTORYQ(ptr addrspace(1) %0, ptr addrspace(1) %1, ptr addrspace(1) %2) {
+declare ptr @aligned_alloc(i32, i32)
+
+define void @Matmul_m1024n1024k1024_hZ6LLvE4c3lRy32ZTNZ9(ptr addrspace(1) %0, ptr addrspace(1) %1, ptr addrspace(1) %2) {
   %4 = call i32 @llvm.amdgcn.workgroup.id.x(), !range !1
   %5 = call i32 @llvm.amdgcn.workgroup.id.y(), !range !1
-  %6 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i64))
+  %6 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i32))
   %7 = addrspacecast ptr %6 to ptr addrspace(3)
-  %8 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i64))
+  %8 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 2048) to i32))
   %9 = addrspacecast ptr %8 to ptr addrspace(3)
   %10 = call i32 @llvm.amdgcn.workitem.id.x(), !range !2
   %11 = call i32 @llvm.amdgcn.workitem.id.y(), !range !2
-  %12 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i64))
+  %12 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i32))
   %13 = addrspacecast ptr %12 to ptr addrspace(5)
-  %14 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i64))
+  %14 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 4) to i32))
   %15 = addrspacecast ptr %14 to ptr addrspace(5)
-  %16 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 16) to i64))
+  %16 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 16) to i32))
   %17 = addrspacecast ptr %16 to ptr addrspace(5)
-  %18 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 16) to i64))
+  %18 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 16) to i32))
   %19 = addrspacecast ptr %18 to ptr addrspace(5)
-  %20 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 64) to i64))
+  %20 = call ptr @aligned_alloc(i32 16, i32 ptrtoint (ptr getelementptr (float, ptr null, i32 64) to i32))
   %21 = addrspacecast ptr %20 to ptr addrspace(5)
   br label %22
 

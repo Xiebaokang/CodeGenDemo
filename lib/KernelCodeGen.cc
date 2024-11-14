@@ -126,10 +126,11 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
 
   secondLowering(mod, context);
   mod.dump();
-
+#if 0
   auto llvm_mod = translateModuleToLLVMIR(mod);
   llvm_mod->print(llvm::outs(), nullptr);
-
+#endif
+  
   return true;
 }
 

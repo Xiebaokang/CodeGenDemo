@@ -100,6 +100,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/Conversion/Passes.h.inc"
 
 // conversion
@@ -138,6 +139,12 @@ enum class Position {
 enum class Layout {
   rowMajor = 0,
   colMajor = 1,
+};
+
+struct NVVMMetadata {
+  llvm::SmallVector<int, 3> maxntid;
+  bool isKernel{};
+  // Free to extend with other information.
 };
 
 }
