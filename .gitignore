@@ -3,3 +3,4 @@ build
 doc
 Runtime/python/kcg/*/__pycache__/
 Runtime/python/kcg/__pycache__/
+ceshiData/

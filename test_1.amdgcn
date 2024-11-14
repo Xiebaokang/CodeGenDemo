@@ -1,0 +1,64 @@
+	.text
+	.amdgcn_target "amdgcn-amd-amdhsa--gfx906"
+	.globl	matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c
+	.p2align	8
+	.type	matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c,@function
+matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c:
+
+amdhsa.kernels:
+  - .args:
+      - .address_space:  global
+        .offset:         0
+        .size:           8
+        .value_kind:     global_buffer
+      - .address_space:  global
+        .offset:         8
+        .size:           8
+        .value_kind:     global_buffer
+      - .address_space:  global
+        .offset:         16
+        .size:           8
+        .value_kind:     global_buffer
+      - .offset:         24
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         28
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         32
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         36
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         40
+        .size:           4
+        .value_kind:     by_value
+      - .offset:         44
+        .size:           4
+        .value_kind:     by_value
+    .group_segment_fixed_size: 0
+    .kernarg_segment_align: 8
+    .kernarg_segment_size: 48
+    .language:       OpenCL C
+    .language_version:
+      - 2
+      - 0
+    .max_flat_workgroup_size: 512
+    .name:           matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c
+    .private_segment_fixed_size: 388
+    .sgpr_count:     32
+    .sgpr_spill_count: 0
+    .symbol:         matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c.kd
+    .vgpr_count:     32
+    .vgpr_spill_count: 192
+    .wavefront_size: 64
+amdhsa.target:   amdgcn-amd-amdhsa--gfx906
+amdhsa.version:
+  - 1
+  - 1
+...
+
+	.end_amdgpu_metadata
+	.section	.debug_line
+.Lline_table_start0:

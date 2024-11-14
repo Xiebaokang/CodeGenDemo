@@ -109,18 +109,22 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   mod.dump();
   
-  transforms(mod, context);
+  // transforms(mod, context);
+  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();
   mod.dump();
 
   firstLowering(mod, context);
+  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();
   mod.dump();
 
   secondLowering(mod, context);
+  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();
   mod.dump();
-
+#if 0
   auto llvm_mod = translateModuleToLLVMIR(mod);
   llvm_mod->print(llvm::outs(), nullptr);
-
+#endif
+  
   return true;
 }
 

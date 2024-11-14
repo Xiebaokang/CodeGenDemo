@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _utils_h_
+#define _utils_h_
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -100,6 +101,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/BuiltinDialect.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallVector.h"
 #include "mlir/Conversion/Passes.h.inc"
 
 // conversion
@@ -140,6 +142,17 @@ enum class Layout {
   colMajor = 1,
 };
 
+struct NVVMMetadata {
+  llvm::SmallVector<int, 3> maxntid;
+  bool isKernel{};
+  // Free to extend with other information.
+};
+
+
+#define AttrKernelFunc "nvvm.kernel"
+#define AttrVisibility "sym_visibility" 
+
 }
 
 
+#endif
