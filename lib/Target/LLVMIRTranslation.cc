@@ -1,6 +1,7 @@
 
 #include "Target/LLVMIRTranslation.h"
-
+#include <dlfcn.h>
+#include <filesystem>
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -111,18 +112,21 @@ extractNVVMMetadata(mlir::ModuleOp module,
   }
 }
 
+
+
 void optimizeLLVMIRModule(
     llvm::Module* llvmModule,
     llvm::DenseMap<llvm::StringRef, NVVMMetadata>* nvvmMetadata,
     KernelCodeGen::Target target
   )
 {
-  
   // const int numWarps = triton::gpu::TritonGPUDialect::getNumWarps(module);
   const int numWarps = 4;
   // const int warpSize = triton::gpu::TritonGPUDialect::getThreadsPerWarp(module);
   const int warpSize = 64;
   const int threadsPerCTA = numWarps * warpSize;
+
+
 
   for (auto &func : llvmModule->functions()) {
     auto it = nvvmMetadata->find(func.getName());
@@ -130,6 +134,8 @@ void optimizeLLVMIRModule(
       // amendLLVMFunc(&func, it->second, target, threadsPerCTA, wavesPerEU);
       amendLLVMFunc(&func, it->second, target, threadsPerCTA, 2);
   }
+
+
 
 }
 

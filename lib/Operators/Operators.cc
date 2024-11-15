@@ -1,4 +1,6 @@
 #include "Operators/Operators.h"
+#include "utils.h"
+#include <filesystem>
 
 namespace KernelCodeGen {
 
@@ -61,7 +63,6 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, mlir::OpBuilder& builder
   auto& entryBlock = funcOp.front();
   builder.setInsertionPointToStart(&entryBlock);
   builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
-
   return funcOp;
 }
 

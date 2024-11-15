@@ -1,5 +1,8 @@
 #include "KernelCodeGen.h"
 #include "Target/HSACOTranslation.h"
+#include <dlfcn.h>
+#include <filesystem>
+
 namespace KernelCodeGen {
 
 std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
@@ -8,6 +11,7 @@ std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
   }
   return nullptr;
 }
+
 
 std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, std::vector<std::map<std::string, int>>> configs) {
   auto tempMod = mlir::dyn_cast<mlir::ModuleOp>(module->clone());
@@ -106,9 +110,80 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 }
 
 
+bool isBCFile(const std::string& extname,const std::string& fileName, const std::string& gfxArchDigits){
+    bool is_oclcVersion = false;
+    bool is_gfxArchMatch = false;
+    static std::string nameList[] = {
+            "opencl.bc",
+            "ocml.bc",
+            "ockl.bc",
+            "oclc_finite_only_off.bc",
+            "oclc_daz_opt_on.bc",
+            "oclc_correctly_rounded_sqrt_on.bc",
+            "oclc_unsafe_math_off.bc",
+            "oclc_wavefrontsize64_on.bc",
+            "oclc_abi_version_400.bc"
+    };
+
+    if(extname != ".bc"){
+        return false;
+    }
+    for(const auto& name : nameList){
+        if(fileName == name){
+            return true;
+        }
+    }
+    if(fileName.find("oclc_isa_version") != fileName.npos && fileName.find(gfxArchDigits) != fileName.npos){
+        return true;
+    }
+    return false;
+}
+
+
+std::vector<std::pair<std::string,std::string>> getROCMBitcodefiles(
+    const std::string& path, const std::string& gfx_arch) 
+{
+    std::vector<std::pair<std::string,std::string>> files;
+    int index = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(path)) {
+        if (entry.is_regular_file()) {
+            const auto& fileName = entry.path().filename().string();
+            auto extname = entry.path().extension().string();
+            if(isBCFile(extname, fileName,"906")){
+                auto pair = std::make_pair("library_"+std::to_string(index++),path+"/"+fileName);
+                files.push_back(std::move(pair));
+            }
+        }
+    }
+    assert(files.size() == 10);
+    return files;
+}
+
+
+void addExternalLibs(mlir::ModuleOp &module) 
+{
+  using namespace mlir;
+  const auto& bcfiles = getROCMBitcodefiles(
+    "/home/pangyunfei/xushilong/CodeGenDemo/third_party/hip/lib/bitcode","906");
+
+  llvm::SmallVector<NamedAttribute, 2> attrs;
+
+  for (size_t i = 0; i < bcfiles.size(); ++i) {
+    auto name = StringAttr::get(module->getContext(), bcfiles[i].first);
+    auto path = StringAttr::get(module->getContext(), bcfiles[i].second);
+    NamedAttribute attr(name, path);
+    attrs.push_back(attr);
+  }
+
+  DictionaryAttr dict = DictionaryAttr::get(module->getContext(), attrs);
+  module.getOperation()->setAttr(AttrExternLib, dict);
+}
+
+
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
+  addExternalLibs(mod);
   mod.dump();
-  
+
   // transforms(mod, context);
   llvm::outs() << " === start mlir =====\n";llvm::outs().flush();
   mod.dump();

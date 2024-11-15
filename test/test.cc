@@ -24,31 +24,27 @@ void test(const char* llirPath , bool amendLLIR = true) {
 
   auto mods = generator.optimize(configs);
   llvm::DenseMap<llvm::StringRef, NVVMMetadata> metadata ;
+  std::map<std::string, std::string> externLibs;
   for (auto mod: mods) {
     // mod.dump();
     auto res = generator.lowering(mod);
     getNVVMMetaData(mod,&metadata);
-
+    externLibs = KernelCodeGen::KernelCodeGenerator::getExternLibs(mod);
     std::cout << res << "\n";
   }
   #endif
+
+  generateAmdgcnAndHsacoFromLLIRFile(llirPath,"gfx906","amdgcn-amd-amdhsa","",&metadata,&externLibs);
   
-  if(amendLLIR){
-    generateAmdgcnAndHsacoFromLLIRFile(llirPath,"gfx906","amdgcn-amd-amdhsa","",&metadata);
-  }
-  else{
-    generateAmdgcnAndHsacoFromLLIRFile(llirPath,"gfx906","amdgcn-amd-amdhsa","",nullptr);
-  }
 }
 
 
 int main(int argc, char* argv[]) {
-  if(argc < 3){
-    std::cout << "error. correct usage: codegen ${llirPath} ${amendLLIR}[1|0]" << std::endl;
+  if(argc < 2){
+    std::cout << "error. correct usage: codegen ${llirPath} " << std::endl;
     return 1;
   }
   const char *llirPath = argv[1];
-  int amendLLIR = std::stoi((char *)argv[2]);
-  test(llirPath, (amendLLIR > 0));
+  test(llirPath);
   return 0;
 }

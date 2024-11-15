@@ -1,4 +1,6 @@
 #include "Target/HSACOTranslation.h"
+#include <exception>
+#include "KernelCodeGen.h"
 #include <mutex>
 #include <stack>
 #include <unordered_map>
@@ -76,7 +78,7 @@ using namespace mlir;
 
 namespace KernelCodeGen
 {
-    inline std::string getenv(const char *name) {
+    std::string getenv(const char *name) {
         const char *cstr = std::getenv(name);
         if (!cstr)
             return "";
@@ -317,8 +319,13 @@ namespace KernelCodeGen
     
     
     std::tuple<std::string, std::string> generateAmdgcnAndHsaco(
-        const std::string llvmIR, std::string gfx_arch, std::string gfx_triple,
-        std::string gfx_features, llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata = nullptr)
+        const std::string llvmIR,
+        std::string gfx_arch, 
+        std::string gfx_triple,
+        std::string gfx_features, 
+        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata,
+        std::map<std::string, std::string>* externLibs
+        )
     {
         llvm::LLVMContext context;
         std::unique_ptr<llvm::MemoryBuffer> buffer =
@@ -333,6 +340,14 @@ namespace KernelCodeGen
         else{
             std::cout << "[D] NotOptimizeLLVMIRModule" << std::endl;
         }
+        // link extern libs
+        // auto externLibs = KernelCodeGen::KernelCodeGenerator::getExternLibs(module);
+        for (auto &lib : *externLibs) {
+            if (KernelCodeGen::KernelCodeGenerator::linkExternLib(*module, lib.first, lib.second, true)){
+                assert(false && "linkExternLib error");
+            }
+        }
+
         // translate module to HSACO
         auto hsacoCode = translateLLVMIRToHSACO(
             *module, gfx_arch, gfx_triple, gfx_features);
@@ -344,7 +359,8 @@ namespace KernelCodeGen
         const std::string& gfx_arch,
         const std::string& gfx_triple,
         const std::string& gfx_features,
-        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata
+        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata,
+        std::map<std::string, std::string>* externLibs
         )
     {
         std::ifstream file(filePath);
@@ -361,7 +377,7 @@ namespace KernelCodeGen
             content += line + "\n";
         }
         file.close();
-        auto ret = generateAmdgcnAndHsaco(content,gfx_arch,gfx_triple,gfx_features,metadata);
+        auto ret = generateAmdgcnAndHsaco(content,gfx_arch,gfx_triple,gfx_features,metadata,externLibs);
         std::string amdgcn = std::get<0>(ret);
         std::string hsacoPath = std::get<1>(ret);
         std::ofstream outasm("/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn");
@@ -376,4 +392,7 @@ namespace KernelCodeGen
         std::cout << "hsacopath=" << hsacoPath << std::endl;
         return hsacoPath;
     }
+
+
+
 }

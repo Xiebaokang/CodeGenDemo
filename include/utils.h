@@ -151,6 +151,9 @@ struct NVVMMetadata {
 
 #define AttrKernelFunc "nvvm.kernel"
 #define AttrVisibility "sym_visibility" 
+#define AttrExternLib "kcg.externLibs"
+
+std::string getenv(const char *name);
 
 }
 
