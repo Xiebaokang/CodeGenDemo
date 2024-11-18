@@ -13,7 +13,7 @@ import sys
 
 
 class kcgData:
-    hsacoPath='/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/kcg_kernel-7a3f65.hsaco'
+    hsacoPath='/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/kcg_kernel-8c9272.hsaco'
     funName = 'Matmul_m1024n1024k1024_randomString'
 
 class tritonData_finalLL_opt: # OK
