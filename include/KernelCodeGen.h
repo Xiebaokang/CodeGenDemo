@@ -76,7 +76,7 @@ namespace KernelCodeGen
     std::vector<mlir::ModuleOp> optimize(std::map<std::string, std::vector<std::map<std::string, int>>> configs);
 
     bool lowering(mlir::ModuleOp &mod);
-
+    std::string translate(mlir::ModuleOp& mod, llvm::DenseMap<llvm::StringRef, NVVMMetadata>* meta);
     static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module)
     {
       // std::cout << "getExternLibs" << std::endl;

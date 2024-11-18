@@ -86,12 +86,14 @@ namespace KernelCodeGen
         return result;
     }
 
-    inline bool getBoolEnv(const std::string &env) {
+    inline bool getBoolEnv(const std::string &env)
+    {
         std::string msg = "Environment variable " + env + " is not recognized";
         const char *s = std::getenv(env.c_str());
         std::string str(s ? s : "");
         std::transform(str.begin(), str.end(), str.begin(),
-                        [](unsigned char c) { return std::tolower(c); });
+                       [](unsigned char c)
+                       { return std::tolower(c); });
         return (str == "on" || str == "true" || str == "1");
     }
 
@@ -160,7 +162,7 @@ namespace KernelCodeGen
         pass.run(*module);
 
         std::error_code EC;
-        llvm::raw_fd_ostream fileOS("log/translateLLVMIRToHSACO.log", EC,
+        llvm::raw_fd_ostream fileOS("/home/pangyunfei/xie/CodeGenDemo/log/translateLLVMIRToHSACO.log", EC,
                                     llvm::sys::fs::OF_Text);
 
         if (EC)
@@ -241,6 +243,8 @@ namespace KernelCodeGen
                                      llvm::CodeGenFileType::ObjectFile);
         pass.run(*module);
 
+        // module->print(llvm::outs(), nullptr);
+
         // generate HASCO file
         std::filesystem::path hsaco(kernel_name + ".hsaco");
         std::string hsaco_path = (kernel_dir / hsaco).string();
@@ -306,6 +310,7 @@ namespace KernelCodeGen
 
         return std::make_tuple(amdgcn, hsaco_path);
     }
+
     std::tuple<std::string, std::string>
     translateLLVMIRToHSACO(llvm::Module &module, std::string gfx_arch,
                            std::string gfx_triple, std::string gfx_features)
@@ -316,8 +321,6 @@ namespace KernelCodeGen
         return hsacoCode;
     }
 
-    
-    
     std::tuple<std::string, std::string> generateAmdgcnAndHsaco(
         const std::string llvmIR,
         std::string gfx_arch, 
@@ -328,16 +331,16 @@ namespace KernelCodeGen
         )
     {
         llvm::LLVMContext context;
-        std::unique_ptr<llvm::MemoryBuffer> buffer =
-            llvm::MemoryBuffer::getMemBuffer(llvmIR.c_str());
+        std::unique_ptr<llvm::MemoryBuffer> buffer = llvm::MemoryBuffer::getMemBuffer(llvmIR.c_str());
         llvm::SMDiagnostic error;
-        std::unique_ptr<llvm::Module> module =
-            llvm::parseIR(buffer->getMemBufferRef(), error, context);
-        if(metadata != nullptr){
+        std::unique_ptr<llvm::Module> module = llvm::parseIR(buffer->getMemBufferRef(), error, context);
+        if (metadata != nullptr)
+        {
             std::cout << "[D] optimizeLLVMIRModule" << std::endl;
-            optimizeLLVMIRModule(module.get(),metadata,Target::ROCm);
+            optimizeLLVMIRModule(module.get(), metadata, Target::ROCm);
         }
-        else{
+        else
+        {
             std::cout << "[D] NotOptimizeLLVMIRModule" << std::endl;
         }
         // link extern libs
@@ -353,40 +356,27 @@ namespace KernelCodeGen
             *module, gfx_arch, gfx_triple, gfx_features);
         return hsacoCode;
     }
-    
-    std::string generateAmdgcnAndHsacoFromLLIRFile(
-        const char* filePath,
-        const std::string& gfx_arch,
-        const std::string& gfx_triple,
-        const std::string& gfx_features,
-        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata,
-        std::map<std::string, std::string>* externLibs
-        )
-    {
-        std::ifstream file(filePath);
-        if (!file.is_open())
-        {
-            std::cerr << "Error opening file: " << filePath << std::endl;
-            return "";
-        }
 
-        std::string content;
-        std::string line;
-        while (std::getline(file, line))
-        {
-            content += line + "\n";
-        }
-        file.close();
-        auto ret = generateAmdgcnAndHsaco(content,gfx_arch,gfx_triple,gfx_features,metadata,externLibs);
+    std::string generateAmdgcnAndHsacoFromLLIRFile(
+        const std::string module,
+        const std::string &gfx_arch,
+        const std::string &gfx_triple,
+        const std::string &gfx_features,
+        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata> *metadata,
+        std::map<std::string, std::string>* externLibs)
+    {
+        auto ret = generateAmdgcnAndHsaco(module, gfx_arch, gfx_triple, gfx_features, metadata, externLibs);
         std::string amdgcn = std::get<0>(ret);
         std::string hsacoPath = std::get<1>(ret);
         std::ofstream outasm("/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn");
-        if(outasm.is_open()){
+        if (outasm.is_open())
+        {
             outasm << amdgcn;
             outasm.close();
             std::cout << "write amdgcn success!" << std::endl;
         }
-        else{
+        else
+        {
             std::cout << "write amdgcn error!" << std::endl;
         }
         std::cout << "hsacopath=" << hsacoPath << std::endl;

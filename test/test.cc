@@ -7,9 +7,7 @@
 using namespace KernelCodeGen;
 using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
 
-std::string llirFilePath = "";
-
-void test(const char* llirPath , bool amendLLIR = true) {
+void test() {
   #if 1
   KernelCodeGenerator generator("CUDA");
 
@@ -30,21 +28,23 @@ void test(const char* llirPath , bool amendLLIR = true) {
     auto res = generator.lowering(mod);
     getNVVMMetaData(mod,&metadata);
     externLibs = KernelCodeGen::KernelCodeGenerator::getExternLibs(mod);
-    std::cout << res << "\n";
+    std::cout << "lowering status: " << res << "\n";
+    auto llir = generator.translate(mod, &metadata);
+    auto result = generateAmdgcnAndHsacoFromLLIRFile(llir,"gfx906","amdgcn-amd-amdhsa","",&metadata,&externLibs);
+    std::cout << result << "\n";
   }
   #endif
-
-  generateAmdgcnAndHsacoFromLLIRFile(llirPath,"gfx906","amdgcn-amd-amdhsa","",&metadata,&externLibs);
   
 }
 
-
 int main(int argc, char* argv[]) {
-  if(argc < 2){
-    std::cout << "error. correct usage: codegen ${llirPath} " << std::endl;
-    return 1;
-  }
-  const char *llirPath = argv[1];
-  test(llirPath);
+  // if(argc < 3){
+  //   std::cout << "error. correct usage: codegen ${llirPath} ${amendLLIR}[1|0]" << std::endl;
+  //   return 1;
+  // }
+  // const char *llirPath = argv[1];
+  // int amendLLIR = std::stoi((char *)argv[2]);
+  // test(llirPath, (amendLLIR > 0));
+  test();
   return 0;
 }

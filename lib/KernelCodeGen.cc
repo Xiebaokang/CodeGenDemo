@@ -186,21 +186,26 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
 
   // transforms(mod, context);
   llvm::outs() << " === start mlir =====\n";llvm::outs().flush();
-  mod.dump();
+  // mod.dump();
 
   firstLowering(mod, context);
   llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();
-  mod.dump();
+  // mod.dump();
 
   secondLowering(mod, context);
   llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();
-  mod.dump();
-#if 0
-  auto llvm_mod = translateModuleToLLVMIR(mod);
-  llvm_mod->print(llvm::outs(), nullptr);
-#endif
+  // mod.dump();
+// #if 0
+//   auto llvm_mod = translateModuleToLLVMIR(mod);
+//   llvm_mod->print(llvm::outs(), nullptr);
+// #endif
   
   return true;
+}
+
+std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod, llvm::DenseMap<llvm::StringRef, NVVMMetadata>* meta) {
+  getNVVMMetaData(mod, meta);
+  return translateMLIRToLLVMIR(mod);
 }
 
 }

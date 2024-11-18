@@ -34,16 +34,16 @@ def make_stub(kernelLibFile : KernelLibFile) -> str :
         with tempfile.TemporaryDirectory() as tmpdir:
             
             src = generate_launcher_hip(kernelLibFile)
-            src = []
-            with open("/home/pangyunfei/xushilong/KernelCodeGen/stubCode_hip.cpp") as ff:
-                src = ff.readlines()
+            # src = []
+            # with open("/home/pangyunfei/xushilong/KernelCodeGen/stubCode_hip.cpp") as ff:
+            #     src = ff.readlines()
             src_path = os.path.join(tmpdir, "main.c")
             with open(src_path, "w") as f:
                 for line in src:
                     f.write(line)  # generate stub code
-            with open("/home/pangyunfei/xushilong/KernelCodeGen/tempsrc.cpp", "w") as f:
-                for line in src:
-                    f.write(line)  # generate stub code
+            # with open("/home/pangyunfei/xushilong/KernelCodeGen/tempsrc.cpp", "w") as f:
+            #     for line in src:
+            #         f.write(line)  # generate stub code
             so = build(so_name, src_path, tmpdir)
             with open(so, "rb") as f:
                 return so_cache_manager.put(f.read(), so_name, binary=True)

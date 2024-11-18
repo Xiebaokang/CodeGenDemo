@@ -8,6 +8,10 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "mlir/Tools/ParseUtilities.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/MemoryBuffer.h"
+
 #include "mlir/InitAllDialects.h"
 #include "mlir/Dialect/Affine/Passes.h"
 #include "mlir/Dialect/LLVMIR/Transforms/RequestCWrappers.h"
@@ -32,7 +36,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 
-
+#include "mlir/Target/LLVMIR/Dialect/All.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -113,6 +117,8 @@
 #include <deque>
 #include <string>
 #include <random>
+#include <cstdio>
+#include <sstream>
 
 namespace KernelCodeGen {
 

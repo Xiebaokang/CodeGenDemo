@@ -2,6 +2,12 @@
 #include "Target/LLVMIRTranslation.h"
 #include <dlfcn.h>
 #include <filesystem>
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include <optional>
+
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
 #include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
@@ -12,7 +18,73 @@
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
 #include "utils.h"
 
+namespace {
 using namespace llvm;
+
+static std::optional<OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel) {
+  switch (optLevel) {
+  case 0:
+    return OptimizationLevel::O0;
+  case 1:
+    return OptimizationLevel::O1;
+  case 2:
+    switch (sizeLevel) {
+    case 0:
+      return OptimizationLevel::O2;
+    case 1:
+      return OptimizationLevel::Os;
+    case 2:
+      return OptimizationLevel::Oz;
+    }
+    break;
+  case 3:
+    return OptimizationLevel::O3;
+  }
+  return std::nullopt;
+}
+
+static std::function<Error(Module *)> makeOptimizingPipeline(unsigned optLevel, unsigned sizeLevel, TargetMachine *targetMachine) {
+  return [optLevel, sizeLevel, targetMachine](Module *m) -> Error {
+    std::optional<OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
+    if (!ol) {
+      return make_error<StringError>(
+          formatv("invalid optimization/size level {0}/{1}", optLevel, sizeLevel).str(),
+          inconvertibleErrorCode());
+    }
+    LoopAnalysisManager lam;
+    FunctionAnalysisManager fam;
+    CGSCCAnalysisManager cgam;
+    ModuleAnalysisManager mam;
+
+    PipelineTuningOptions tuningOptions;
+    tuningOptions.LoopUnrolling = true;
+    tuningOptions.LoopInterleaving = true;
+    tuningOptions.LoopVectorization = true;
+    tuningOptions.SLPVectorization = true;
+
+    PassBuilder pb(targetMachine, tuningOptions);
+
+    pb.registerModuleAnalyses(mam);
+    pb.registerCGSCCAnalyses(cgam);
+    pb.registerFunctionAnalyses(fam);
+    pb.registerLoopAnalyses(lam);
+    pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+    ModulePassManager mpm;
+    pb.registerVectorizerStartEPCallback(
+        [&](llvm::FunctionPassManager &fpm, llvm::OptimizationLevel level) {
+          fpm.addPass(InstCombinePass());
+        });
+    mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
+    mpm.run(*m, mam);
+    return Error::success();
+  };
+}
+}
+
+
+using namespace llvm;
+
 namespace KernelCodeGen {
 
 // Add the nvvm related metadata to LLVM IR.
@@ -139,26 +211,57 @@ void optimizeLLVMIRModule(
 
 }
 
+
 void getNVVMMetaData(mlir::ModuleOp& module,llvm::DenseMap<llvm::StringRef, NVVMMetadata>* nvvmMetadata){
   extractNVVMMetadata(module, nvvmMetadata);
 }
 
-std::unique_ptr<llvm::Module> translateModuleToLLVMIR(mlir::ModuleOp module) {
 
+std::string translateMLIRToLLVMIR(mlir::ModuleOp module) {
   mlir::DialectRegistry registry;
-  mlir::registerBuiltinDialectTranslation(registry);   // 注册
-  mlir::registerLLVMDialectTranslation(registry);
-  mlir::registerROCDLDialectTranslation(registry);
-
-  module->getContext()->appendDialectRegistry(registry);
-
+  registry.insert<mlir::DLTIDialect, mlir::func::FuncDialect>();
+  registerAllToLLVMIRTranslations(registry);
+  module.getContext()->appendDialectRegistry(registry);
   llvm::LLVMContext llvmContext;
-  auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+  std::unique_ptr<llvm::Module> llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+
   if (!llvmModule) {
     llvm::errs() << "Failed to emit LLVM IR\n";
-    return nullptr;
+    return "";
   }
-  return llvmModule;
+  auto optPipeline = makeOptimizingPipeline(/*optLevel=*/3, /*sizeLevel=*/0, /*targetMachine=*/nullptr);
+  if (auto err = optPipeline(llvmModule.get())) {
+    llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
+    return "";
+  }  
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  llvmModule->print(os, nullptr);
+  os.flush();
+  return str;
+}
+
+// 弃用
+std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module) {
+  std::string llvmPath{"/home/pangyunfei/xie/CodeGenDemo/build/llvmir.ll"};
+  std::string mlirPtah{"/home/pangyunfei/xie/CodeGenDemo/build/llvm-dialect.mlir"};
+  // 存储mlir
+  std::error_code ec;
+  llvm::raw_fd_ostream outputFile(mlirPtah, ec);
+  if (ec) {
+    llvm::errs() << "Error: " << ec.message() << "\n";
+    return "";
+  }
+  module->print(outputFile);
+  outputFile.close();
+  // 运行指令
+  std::stringstream command;
+  command << "/home/pangyunfei/xie/CodeGenDemo/bin/mlir-translate ";
+  command << mlirPtah << " -mlir-to-llvmir > " << llvmPath;
+
+  int result = system(command.str().c_str());
+
+  return llvmPath;
 }
 
 }

@@ -5,7 +5,7 @@
 
 namespace KernelCodeGen {
 
-std::unique_ptr<llvm::Module> translateModuleToLLVMIR(mlir::ModuleOp module);
+std::string translateMLIRToLLVMIR(mlir::ModuleOp module);
 
 void optimizeLLVMIRModule(
     llvm::Module* llvmModule,
@@ -15,5 +15,7 @@ void optimizeLLVMIRModule(
 
 void getNVVMMetaData(mlir::ModuleOp& module,llvm::DenseMap<llvm::StringRef, NVVMMetadata>* meta);
 
+
+std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module);
 }
 #endif

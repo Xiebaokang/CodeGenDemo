@@ -6,7 +6,7 @@ using namespace mlir;
 
 namespace KernelCodeGen {
 std::string generateAmdgcnAndHsacoFromLLIRFile(
-        const char* filePath,
+        const std::string module,
         const std::string& gfx_arch,
         const std::string& gfx_triple,
         const std::string& gfx_features,
