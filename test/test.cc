@@ -9,7 +9,7 @@ using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
 
 void test() {
   #if 1
-  KernelCodeGenerator generator("CUDA");
+  KernelCodeGenerator generator(Target::ROCm, "906");
 
   Config configs = {
     {"Matmul", {
@@ -19,32 +19,19 @@ void test() {
   };
 
   generator.create<Matmul>(std::vector<int64_t>{1024, 1024, 1024});
-
   auto mods = generator.optimize(configs);
-  llvm::DenseMap<llvm::StringRef, NVVMMetadata> metadata ;
-  std::map<std::string, std::string> externLibs;
   for (auto mod: mods) {
-    // mod.dump();
+
     auto res = generator.lowering(mod);
-    getNVVMMetaData(mod,&metadata);
-    externLibs = KernelCodeGen::KernelCodeGenerator::getExternLibs(mod);
     std::cout << "lowering status: " << res << "\n";
-    auto llir = generator.translate(mod, &metadata);
-    auto result = generateAmdgcnAndHsacoFromLLIRFile(llir,"gfx906","amdgcn-amd-amdhsa","",&metadata,&externLibs);
-    std::cout << result << "\n";
+    auto result = generator.translate(mod);
+    // std::cout << result << "\n";
   }
   #endif
   
 }
 
 int main(int argc, char* argv[]) {
-  // if(argc < 3){
-  //   std::cout << "error. correct usage: codegen ${llirPath} ${amendLLIR}[1|0]" << std::endl;
-  //   return 1;
-  // }
-  // const char *llirPath = argv[1];
-  // int amendLLIR = std::stoi((char *)argv[2]);
-  // test(llirPath, (amendLLIR > 0));
   test();
   return 0;
 }

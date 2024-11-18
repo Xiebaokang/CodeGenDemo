@@ -1,5 +1,7 @@
 
 #include "Target/LLVMIRTranslation.h"
+#include "Analysis/Analyzer.h"
+
 #include <dlfcn.h>
 #include <filesystem>
 #include "llvm/Passes/OptimizationLevel.h"
@@ -7,6 +9,16 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Transforms/InstCombine/InstCombine.h"
 #include <optional>
+#include <string>
+#include <sstream>
+#include <fstream>
+#include <initializer_list>
+#include <climits>
+#include <cfloat>
+#include "llvm/ADT/StringRef.h"
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/Linker/Linker.h"
+#include "llvm/MC/TargetRegistry.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
@@ -64,6 +76,18 @@ static std::function<Error(Module *)> makeOptimizingPipeline(unsigned optLevel, 
 
     PassBuilder pb(targetMachine, tuningOptions);
 
+    std::string pluginFile = KernelCodeGen::getenv("AMDGCN_INSTRUMENTATION_LIB");
+    if (!pluginFile.empty()) {
+        llvm::errs() << "Adding AMDGCN instrumentation pass to Triton pipeline" << "\n";
+        auto passPlugin = llvm::PassPlugin::Load(pluginFile);
+        if (!passPlugin) {
+                llvm::Error Err = passPlugin.takeError();
+                llvm::errs() << "ERROR: " << Err << "\n";
+                consumeError(std::move(Err));
+        }
+        passPlugin->registerPassBuilderCallbacks(pb);
+    }
+
     pb.registerModuleAnalyses(mam);
     pb.registerCGSCCAnalyses(cgam);
     pb.registerFunctionAnalyses(fam);
@@ -84,7 +108,6 @@ static std::function<Error(Module *)> makeOptimizingPipeline(unsigned optLevel, 
 
 
 using namespace llvm;
-
 namespace KernelCodeGen {
 
 // Add the nvvm related metadata to LLVM IR.
@@ -151,11 +174,9 @@ static void amendLLVMFunc(llvm::Function *func, const NVVMMetadata &metadata,
 }
 
 
-static void
-extractNVVMMetadata(mlir::ModuleOp module,
-                    llvm::DenseMap<llvm::StringRef, NVVMMetadata> *dic) {
-  llvm::outs() << "extractNVVMMetadata[1]\n";
-  llvm::outs().flush();
+static void extractNVVMMetadata(mlir::ModuleOp module, llvm::DenseMap<llvm::StringRef, NVVMMetadata> *dic) {
+  // llvm::outs() << "extractNVVMMetadata[1]\n";
+  // llvm::outs().flush();
   for (auto op : module.getOps<mlir::LLVM::LLVMFuncOp>()) {
     NVVMMetadata meta;
 
@@ -171,57 +192,149 @@ extractNVVMMetadata(mlir::ModuleOp module,
 
     // kernel
     if (op->hasAttr("nvvm.kernel")) {
-      llvm::outs() << "[D] is Kernel";
-      llvm::outs().flush();
+      // llvm::outs() << "[D] is Kernel";
+      // llvm::outs().flush();
       meta.isKernel = true;
       hasMetadata = true;
     }
 
     if (hasMetadata){
       dic->try_emplace(op.getNameAttr().strref(), std::move(meta));
-      llvm::outs() << "add meta: " << op.getNameAttr().strref() << "\n"; llvm::outs().flush();
+      // llvm::outs() << " add meta: " << op.getNameAttr().strref() << "\n"; 
+      // llvm::outs().flush();
     }
   }
 }
 
+static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
+  std::map<std::string, std::string> externLibs;
+  SmallVector<mlir::LLVM::LLVMFuncOp> funcs;
+  module.walk([&](mlir::LLVM::LLVMFuncOp func){
+    if (func.isExternal())
+      funcs.push_back(func); 
+  });
 
+  for (auto &func : funcs) {
+    if (func.getOperation()->hasAttr("libname")) {
+      auto name = func.getOperation()->getAttr("libname").dyn_cast<mlir::StringAttr>();
+      auto path = func.getOperation()->getAttr("libpath").dyn_cast<mlir::StringAttr>();
+        if (name) {
+            std::string libName = name.str();
+            externLibs[libName] = path.str();
+        }
+      }
+    }
 
-void optimizeLLVMIRModule(
-    llvm::Module* llvmModule,
-    llvm::DenseMap<llvm::StringRef, NVVMMetadata>* nvvmMetadata,
-    KernelCodeGen::Target target
-  )
-{
-  // const int numWarps = triton::gpu::TritonGPUDialect::getNumWarps(module);
-  const int numWarps = 4;
-  // const int warpSize = triton::gpu::TritonGPUDialect::getThreadsPerWarp(module);
-  const int warpSize = 64;
-  const int threadsPerCTA = numWarps * warpSize;
-
-
-
-  for (auto &func : llvmModule->functions()) {
-    auto it = nvvmMetadata->find(func.getName());
-    if (it != nvvmMetadata->end())
-      // amendLLVMFunc(&func, it->second, target, threadsPerCTA, wavesPerEU);
-      amendLLVMFunc(&func, it->second, target, threadsPerCTA, 2);
+  if (module.getOperation()->hasAttr(AttrExternLib)) {
+    auto dict = module.getOperation()->getAttr(AttrExternLib).dyn_cast<mlir::DictionaryAttr>();
+    for (auto &attr : dict) {
+      externLibs[attr.getName().strref().trim().str()] = attr.getValue().dyn_cast<mlir::StringAttr>().strref().trim().str();
+    }
   }
 
+  if (!funcs.empty()) {
+    static const std::string libdevice = "libdevice";
+        // first search for environmental path
+    std::string env_path = KernelCodeGen::getenv("TRITON_LIBDEVICE_PATH");
+    if (!env_path.empty()) {
+      externLibs.try_emplace(libdevice, env_path);
+      return externLibs;
+    }
+    namespace fs = std::filesystem;
+        // Search for libdevice relative to its library path if used from Python
+        // Then native code is in `triton/_C/libtriton.so` and libdevice in
+        // `triton/third_party/cuda/lib/libdevice.10.bc`
+    static const auto this_library_path = [] {
+    Dl_info fileinfo;
+    if (dladdr(reinterpret_cast<void *>(&getExternLibs), &fileinfo) == 0) {
+      return std::filesystem::path();
+    }
+    return std::filesystem::path(fileinfo.dli_fname);
+    }();
+        // static const auto runtime_path =
+        //     this_library_path.parent_path().parent_path() / "third_party" / "cuda" /
+        //     "lib" / "libdevice.10.bc";
+    const std::string runtime_path = "/home/pangyunfei/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc" ;
+    if (fs::exists(runtime_path)) {
+      // externLibs.try_emplace(libdevice, runtime_path.string());
+      externLibs.try_emplace(libdevice, runtime_path);
+    } else {
+      // When using the Math Dialect, it is possible that some ops (e.g., log)
+      // are lowered to a function call. In this case, we need to link libdevice
+      // using its default path:
+      // [triton root dir]/python/triton/language/libdevice.10.bc
+      // TODO(Keren): handle external linkage other than libdevice?
+      static const auto this_file_path = std::filesystem::path(__FILE__);
+      // static const auto compiletime_path = this_file_path.parent_path()
+      //                                          .parent_path()
+      //                                          .parent_path()
+      //                                          .parent_path() /
+      //                                      "python" / "triton" / "third_party" /
+      //                                      "cuda" / "lib" / "libdevice.10.bc";
+      static std::string compiletime_path = "/home/pangyunfei/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc";
+      if (!fs::exists(compiletime_path)) {
+        std::string error_msg = "Can't find libdevice at neither " + runtime_path + " nor " + compiletime_path;
+        llvm::report_fatal_error(error_msg.c_str());
+      }
+      externLibs.try_emplace(libdevice, compiletime_path);
+    }
+  }
+  return externLibs;
+}
 
+static void linkLibdevice(llvm::Module &module) {
+  // std::cout << "linkLibdevice" << std::endl;
+  // please check https://llvm.org/docs/NVPTXUsage.html#reflection-parameters
+  // this will enable fast math path in libdevice
+  // for example, when enable nvvm-reflect-ftz, sqrt.approx.f32 will change to
+  // sqrt.approx.ftz.f32
+  auto &ctx = module.getContext();
+  llvm::Type *i32 = llvm::Type::getInt32Ty(ctx);
+  llvm::Metadata *mdFour = llvm::ConstantAsMetadata::get(llvm::ConstantInt::getSigned(i32, 4));
+  llvm::Metadata *mdName = llvm::MDString::get(ctx, "nvvm-reflect-ftz");
+  llvm::Metadata *mdOne = llvm::ConstantAsMetadata::get(llvm::ConstantInt::getSigned(i32, 1));
+  llvm::MDNode *reflect = llvm::MDNode::get(ctx, {mdFour, mdName, mdOne});
+  module.addModuleFlag(reflect);
+}
 
+static bool linkExternLib(llvm::Module &module, llvm::StringRef name, llvm::StringRef path, Target target) {
+  llvm::SMDiagnostic err;
+  auto &ctx = module.getContext();
+
+  auto extMod = llvm::parseIRFile(path, err, ctx);
+  if (!extMod) {
+    llvm::errs() << "Failed to load " << path;
+    return true;
+  }
+  extMod->setTargetTriple(module.getTargetTriple());
+  extMod->setDataLayout(module.getDataLayout());
+
+  if (llvm::Linker::linkModules(module, std::move(extMod), llvm::Linker::Flags::LinkOnlyNeeded)) {
+    llvm::errs() << "Failed to link " << path;
+    return true;
+  }
+  // check if ROCM
+  if (Target::CUDA == target) {
+    if (name == "libdevice") {
+      linkLibdevice(module);
+    }
+        // else {
+        //   assert(false && "unknown extern lib: ");
+        // }
+  }
+  return false;
 }
 
 
-void getNVVMMetaData(mlir::ModuleOp& module,llvm::DenseMap<llvm::StringRef, NVVMMetadata>* nvvmMetadata){
-  extractNVVMMetadata(module, nvvmMetadata);
-}
-
-
-std::string translateMLIRToLLVMIR(mlir::ModuleOp module) {
+std::string translateMLIRToLLVMIR(mlir::ModuleOp module, Target target, const int wavesPerEU) {
   mlir::DialectRegistry registry;
   registry.insert<mlir::DLTIDialect, mlir::func::FuncDialect>();
   registerAllToLLVMIRTranslations(registry);
   module.getContext()->appendDialectRegistry(registry);
+
+  llvm::DenseMap<llvm::StringRef, NVVMMetadata> nvvmMetadata;
+  extractNVVMMetadata(module, &nvvmMetadata);
+
   llvm::LLVMContext llvmContext;
   std::unique_ptr<llvm::Module> llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
 
@@ -229,6 +342,21 @@ std::string translateMLIRToLLVMIR(mlir::ModuleOp module) {
     llvm::errs() << "Failed to emit LLVM IR\n";
     return "";
   }
+  
+  auto externLibs = getExternLibs(module);
+  for (auto &lib : externLibs) {
+    if (linkExternLib(*llvmModule, lib.first, lib.second, target))
+      return nullptr;
+  }
+
+  const int threadsPerCTA = Analyzer::getThreadsPerCTA(module);
+  for (auto &func : llvmModule->functions()) {
+    auto it = nvvmMetadata.find(func.getName());
+    if (it != nvvmMetadata.end()) {
+      amendLLVMFunc(&func, it->second, target, threadsPerCTA, wavesPerEU);   //wavesPerEU 每个EU上可以运行的wavefront数量
+    }
+  }
+  
   auto optPipeline = makeOptimizingPipeline(/*optLevel=*/3, /*sizeLevel=*/0, /*targetMachine=*/nullptr);
   if (auto err = optPipeline(llvmModule.get())) {
     llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";

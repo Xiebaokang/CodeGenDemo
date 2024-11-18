@@ -5,16 +5,7 @@
 
 namespace KernelCodeGen {
 
-std::string translateMLIRToLLVMIR(mlir::ModuleOp module);
-
-void optimizeLLVMIRModule(
-    llvm::Module* llvmModule,
-    llvm::DenseMap<llvm::StringRef, NVVMMetadata>* nvvmMetadata,
-    KernelCodeGen::Target target
-);
-
-void getNVVMMetaData(mlir::ModuleOp& module,llvm::DenseMap<llvm::StringRef, NVVMMetadata>* meta);
-
+std::string translateMLIRToLLVMIR(mlir::ModuleOp module, Target target, const int wavesPerEU);
 
 std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module);
 }

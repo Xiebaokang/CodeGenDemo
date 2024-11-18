@@ -298,62 +298,23 @@ namespace KernelCodeGen
 
         // verify and store llvm
         auto module_obj = llvm::CloneModule(*module);
-        if (!module_obj)
-        {
-            llvm::errs() << "Error: clonging LLIR failed"
-                         << "\n";
+        if (!module_obj) {
+            llvm::errs() << "Error: clonging LLIR failed\n";
         }
-        auto amdgcn =
-            generate_amdgcn_assembly(module, gfx_triple, gfx_arch, gfx_features);
-        auto hsaco_path =
-            generate_hsaco(module_obj.get(), gfx_triple, gfx_arch, gfx_features);
+        auto amdgcn = generate_amdgcn_assembly(module, gfx_triple, gfx_arch, gfx_features);
+        auto hsaco_path = generate_hsaco(module_obj.get(), gfx_triple, gfx_arch, gfx_features);
 
         return std::make_tuple(amdgcn, hsaco_path);
     }
 
     std::tuple<std::string, std::string>
-    translateLLVMIRToHSACO(llvm::Module &module, std::string gfx_arch,
-                           std::string gfx_triple, std::string gfx_features)
-    {
-        // std::cout << "translateLLVMIRToHSACO" << std::endl;
-        auto hsacoCode =
-            llir_to_amdgcn_and_hsaco(&module, gfx_arch, gfx_triple, gfx_features);
-        return hsacoCode;
-    }
-
-    std::tuple<std::string, std::string> generateAmdgcnAndHsaco(
-        const std::string llvmIR,
-        std::string gfx_arch, 
-        std::string gfx_triple,
-        std::string gfx_features, 
-        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata>* metadata,
-        std::map<std::string, std::string>* externLibs
-        )
-    {
+    translateLLVMIRToHSACO(const std::string llvmIR, std::string gfx_arch, std::string gfx_triple, std::string gfx_features) {
         llvm::LLVMContext context;
         std::unique_ptr<llvm::MemoryBuffer> buffer = llvm::MemoryBuffer::getMemBuffer(llvmIR.c_str());
         llvm::SMDiagnostic error;
         std::unique_ptr<llvm::Module> module = llvm::parseIR(buffer->getMemBufferRef(), error, context);
-        if (metadata != nullptr)
-        {
-            std::cout << "[D] optimizeLLVMIRModule" << std::endl;
-            optimizeLLVMIRModule(module.get(), metadata, Target::ROCm);
-        }
-        else
-        {
-            std::cout << "[D] NotOptimizeLLVMIRModule" << std::endl;
-        }
-        // link extern libs
-        // auto externLibs = KernelCodeGen::KernelCodeGenerator::getExternLibs(module);
-        for (auto &lib : *externLibs) {
-            if (KernelCodeGen::KernelCodeGenerator::linkExternLib(*module, lib.first, lib.second, true)){
-                assert(false && "linkExternLib error");
-            }
-        }
 
-        // translate module to HSACO
-        auto hsacoCode = translateLLVMIRToHSACO(
-            *module, gfx_arch, gfx_triple, gfx_features);
+        auto hsacoCode = llir_to_amdgcn_and_hsaco(module.get(), gfx_arch, gfx_triple, gfx_features);
         return hsacoCode;
     }
 
@@ -361,24 +322,23 @@ namespace KernelCodeGen
         const std::string module,
         const std::string &gfx_arch,
         const std::string &gfx_triple,
-        const std::string &gfx_features,
-        llvm::DenseMap<llvm::StringRef, KernelCodeGen::NVVMMetadata> *metadata,
-        std::map<std::string, std::string>* externLibs)
+        const std::string &gfx_features
+        )
+
     {
-        auto ret = generateAmdgcnAndHsaco(module, gfx_arch, gfx_triple, gfx_features, metadata, externLibs);
+        auto ret = translateLLVMIRToHSACO(module, gfx_arch, gfx_triple, gfx_features);
         std::string amdgcn = std::get<0>(ret);
         std::string hsacoPath = std::get<1>(ret);
-        std::ofstream outasm("/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn");
-        if (outasm.is_open())
-        {
+        std::string amdgcnPath{"/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn"};
+        std::ofstream outasm(amdgcnPath);
+        if (outasm.is_open()) {
             outasm << amdgcn;
             outasm.close();
             std::cout << "write amdgcn success!" << std::endl;
-        }
-        else
-        {
+        } else {
             std::cout << "write amdgcn error!" << std::endl;
         }
+        std::cout << "amdgcnpath=" << amdgcnPath << std::endl;
         std::cout << "hsacopath=" << hsacoPath << std::endl;
         return hsacoPath;
     }

@@ -59,5 +59,20 @@ std::set<std::string> Analyzer::collectFuncNames(mlir::ModuleOp& module) {
   return result;
 }
 
+int Analyzer::getThreadsPerCTA(mlir::ModuleOp module) {
+  int threadNum = 1;
+  for (auto &op : module.getBody()->getOperations()) {
+    if (auto funcOp = llvm::dyn_cast<mlir::LLVM::LLVMFuncOp>(op)) {
+      if (!funcOp->hasAttr("func.op.name")) continue;
+      auto blockDims = funcOp->getAttrOfType<mlir::DenseI32ArrayAttr>("func.block.dim");
+      for (size_t i=0; i<blockDims.size(); i++) {
+        threadNum *= blockDims[i];
+      }
+      return threadNum;
+    }
+  }
+  return threadNum;
+}
+
 
 }

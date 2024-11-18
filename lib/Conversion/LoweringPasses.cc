@@ -1,4 +1,6 @@
 #include "Conversion/LoweringPasses.h"
+#include <dlfcn.h>
+#include <filesystem>
 
 using namespace mlir;
 
@@ -469,6 +471,80 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
 };
 
 
+struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AddExternalLibPass)
+
+  AddExternalLibPass(const std::string& libsPath_, const std::string& gfx_arch_)
+               : libsPath(libsPath_), gfx_arch(gfx_arch_) {};
+
+  void runOnOperation() override {
+    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    const auto& bcfiles = getROCMBitcodefiles();
+    llvm::SmallVector<NamedAttribute, 2> attrs;
+    for (size_t i = 0; i < bcfiles.size(); ++i) {
+      auto name = StringAttr::get(module->getContext(), bcfiles[i].first);
+      auto path = StringAttr::get(module->getContext(), bcfiles[i].second);
+      NamedAttribute attr(name, path);
+      attrs.push_back(attr);
+    }
+    DictionaryAttr dict = DictionaryAttr::get(module->getContext(), attrs);
+    module.getOperation()->setAttr(AttrExternLib, dict);
+  }
+
+  private:
+
+  const std::string libsPath;
+  const std::string gfx_arch;
+
+  bool isBCFile(const std::string& extname,const std::string& fileName){
+    bool is_oclcVersion = false;
+    bool is_gfxArchMatch = false;
+    static std::string nameList[] = {
+        "opencl.bc",
+        "ocml.bc",
+        "ockl.bc",
+        "oclc_finite_only_off.bc",
+        "oclc_daz_opt_on.bc",
+        "oclc_correctly_rounded_sqrt_on.bc",
+        "oclc_unsafe_math_off.bc",
+        "oclc_wavefrontsize64_on.bc",
+        "oclc_abi_version_400.bc"
+    };
+
+    if(extname != ".bc"){
+      return false;
+    }
+    for(const auto& name : nameList){
+      if(fileName == name){
+         return true;
+      }
+    }
+    if(fileName.find("oclc_isa_version") != fileName.npos && fileName.find(gfx_arch) != fileName.npos){
+      return true;
+    }
+    return false;
+  }
+
+  std::vector<std::pair<std::string,std::string>> getROCMBitcodefiles() {
+    std::vector<std::pair<std::string,std::string>> files;
+    int index = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(libsPath)) {
+      if (entry.is_regular_file()) {
+        const auto& fileName = entry.path().filename().string();
+        auto extname = entry.path().extension().string();
+        if(isBCFile(extname, fileName)){
+          auto pair = std::make_pair("library_"+std::to_string(index++), libsPath+"/"+fileName);
+          files.push_back(std::move(pair));
+        }
+      }
+    }
+    assert(files.size() == 10);
+    return files;
+  }
+
+};
+
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
@@ -496,6 +572,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBi
 
 std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass() {
   return std::make_unique<MallocFuncOpArgTypeI32ToI64Pass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::string& libsPath, const std::string& gfx_arch) {
+  return std::make_unique<AddExternalLibPass>(libsPath, gfx_arch);
 }
 
 }

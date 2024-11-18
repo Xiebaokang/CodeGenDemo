@@ -36,6 +36,8 @@ struct Analyzer {
   static std::vector<mlir::func::FuncOp> collectFunctions(mlir::ModuleOp& module, const std::string& targetFuncName = {""});
   static std::vector<mlir::affine::AffineForOp> collectFuncLoops(mlir::func::FuncOp funcOp);
   static std::set<std::string> collectFuncNames(mlir::ModuleOp& module);
+  
+  static int getThreadsPerCTA(mlir::ModuleOp module); 
 };
 
 }
