@@ -43,7 +43,7 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
 
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::string& libsPath, const std::string& gfx_arch) {
   mlir::PassManager pm(&context);
-  pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
+  // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
   if (mlir::failed(pm.run(mod)))
     return false;
@@ -134,7 +134,7 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
 
 
 std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
-  const int wavesPerEU = 2;
+  const int wavesPerEU = 0;
   const std::string gfx_triple{"amdgcn-amd-amdhsa"};
   const std::string gfx_features{""};
   std::string llvmIR = std::move(translateMLIRToLLVMIR(mod, target, wavesPerEU));

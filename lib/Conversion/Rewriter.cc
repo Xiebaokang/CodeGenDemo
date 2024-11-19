@@ -789,17 +789,17 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   auto newBufferType = mlir::MemRefType::get(
     shape, bufferType.getElementType(), {}, bufferType.getMemorySpaceAsInt());
   mlir::memref::AllocaOp allocRegistOp;
-  mlir::memref::AllocOp allocOp;
+  mlir::memref::AllocaOp allocOp;
   bool isAllocRegist = false;
   mlir::Operation* defineBufferOp = nullptr;
   // mlir::OpBuilder* builder = nullptr;
   std::shared_ptr<mlir::OpBuilder> builder = nullptr;
 
-  if(mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp()) != nullptr){
-    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp());
+  if(mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp()) != nullptr){
+    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());
     // mlir::OpBuilder builder(defineBufferOp);
     builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
-    allocOp = builder->create<mlir::memref::AllocOp>(builder->getUnknownLoc(), newBufferType);
+    allocOp = builder->create<mlir::memref::AllocaOp>(builder->getUnknownLoc(), newBufferType);
   }
   else if(mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp()) != nullptr){
     defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());

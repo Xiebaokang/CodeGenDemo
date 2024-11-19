@@ -65,7 +65,7 @@ struct Rewriter {
       return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
     }
     else{
-      return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+      return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
     }
   }
 
@@ -73,7 +73,7 @@ struct Rewriter {
     if(type.getMemorySpaceAsInt() == int(KernelCodeGen::MemorySpace::local)){
       return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
     }
-    return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), type)->getResult(0);
+    return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
   }
 
   template<typename ContextOp>
@@ -87,13 +87,13 @@ struct Rewriter {
       case Position::before: {
         mlir::OpBuilder builder(contextOp);
         return _inner_alloc_buffer(builder,tensorShape);
-        // return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+        // return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
       }
       case Position::after: {
         mlir::OpBuilder builder(contextOp->getContext());
         builder.setInsertionPointAfter(contextOp);
         return _inner_alloc_buffer(builder,tensorShape);
-        // return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+        // return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
       }
       default: {
         assert(false);
