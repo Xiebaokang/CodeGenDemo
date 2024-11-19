@@ -119,15 +119,15 @@ bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   std::string libsPath{"/home/pangyunfei/xushilong/CodeGenDemo/third_party/hip/lib/bitcode"};
   transforms(mod, context, libsPath, arch);
   llvm::outs() << " === start mlir =====\n";llvm::outs().flush();
-  // mod.dump();
+  mod.dump();
 
   firstLowering(mod, context);
   llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();
-  // mod.dump();
+  mod.dump();
 
   secondLowering(mod, context);
   llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();
-  // mod.dump();
+  mod.dump();
   
   return true;
 }
@@ -137,9 +137,11 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   const int wavesPerEU = 2;
   const std::string gfx_triple{"amdgcn-amd-amdhsa"};
   const std::string gfx_features{""};
-  std::string llvmIR = translateMLIRToLLVMIR(mod, target, wavesPerEU);
+  std::string llvmIR = std::move(translateMLIRToLLVMIR(mod, target, wavesPerEU));
   // std::tuple<std::string, std::string> result = translateLLVMIRToHSACO(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
   // return std::get<1>(result);
+  std::cout << "\n====llvmIR\n" << llvmIR << std::endl;
+
   return generateAmdgcnAndHsacoFromLLIRFile(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
 }
 

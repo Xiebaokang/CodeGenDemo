@@ -20,12 +20,12 @@ void test() {
 
   generator.create<Matmul>(std::vector<int64_t>{1024, 1024, 1024});
   auto mods = generator.optimize(configs);
-  for (auto mod: mods) {
-
+  for (mlir::ModuleOp& mod: mods) {
     auto res = generator.lowering(mod);
-    std::cout << "lowering status: " << res << "\n";
+    std::cout << "==== lowering status: " << (res?"SUCCESS":"FAILED") << "\n";
     auto result = generator.translate(mod);
-    // std::cout << result << "\n";
+    std::cout << "==== translate res :" << "\n";
+    std::cout << result << "\n";
   }
   #endif
   

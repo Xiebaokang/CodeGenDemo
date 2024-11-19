@@ -303,7 +303,7 @@ mlir::Value Rewriter::bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForO
   auto dtype = carryVar.getType();
   auto bufferType = mlir::MemRefType::get(
     bufferShape, dtype, {}, static_cast<int>(MemorySpace::local));
-  auto allocOp = builder.create<mlir::memref::AllocOp>(
+  auto allocOp = builder.create<mlir::memref::AllocaOp>(
     builder.getUnknownLoc(), bufferType);
   
   // step1: init the buffer
@@ -788,11 +788,34 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   }
   auto newBufferType = mlir::MemRefType::get(
     shape, bufferType.getElementType(), {}, bufferType.getMemorySpaceAsInt());
-  auto defineBufferOp = mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp());
-  mlir::OpBuilder builder(defineBufferOp);
-  auto allocOp = builder.create<mlir::memref::AllocOp>(
-    builder.getUnknownLoc(), newBufferType);
-  auto doubleBuffer = allocOp.getResult();
+  mlir::memref::AllocaOp allocRegistOp;
+  mlir::memref::AllocOp allocOp;
+  bool isAllocRegist = false;
+  mlir::Operation* defineBufferOp = nullptr;
+  // mlir::OpBuilder* builder = nullptr;
+  std::shared_ptr<mlir::OpBuilder> builder = nullptr;
+
+  if(mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp()) != nullptr){
+    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp());
+    // mlir::OpBuilder builder(defineBufferOp);
+    builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
+    allocOp = builder->create<mlir::memref::AllocOp>(builder->getUnknownLoc(), newBufferType);
+  }
+  else if(mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp()) != nullptr){
+    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());
+    builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
+    allocRegistOp = builder->create<mlir::memref::AllocaOp>(builder->getUnknownLoc(), newBufferType);
+    isAllocRegist = true;
+  }
+  assert(builder != nullptr && "PipeLineNullptrError");
+  // auto doubleBuffer = allocOp.getResult();
+  mlir::TypedValue<mlir::MemRefType> doubleBuffer;
+  if(isAllocRegist){
+    doubleBuffer = allocRegistOp.getResult();
+  }
+  else{
+    doubleBuffer = allocOp.getResult();
+  }
 
 
   /* step2: prefetch before the loop.*/
@@ -869,13 +892,13 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
     });
   };
   std::vector<mlir::affine::AffineForOp> result;
-  builder.setInsertionPoint(compute_at);
-  auto lbOp = builder.create<mlir::arith::ConstantIndexOp>(builder.getUnknownLoc(), compute_at.getConstantLowerBound());
+  builder->setInsertionPoint(compute_at);
+  auto lbOp = builder->create<mlir::arith::ConstantIndexOp>(builder->getUnknownLoc(), compute_at.getConstantLowerBound());
   auto rootLoop = findRootLoop(compute_at);
   lbOp->moveBefore(&(rootLoop->getBlock()->getOperations().front()));
   for (auto readBody : readBodys) {
     mlir::IRMapping mapper;
-    auto newBody = builder.clone(*readBody, mapper);
+    auto newBody = builder->clone(*readBody, mapper);
     auto loopBody = mlir::dyn_cast<mlir::affine::AffineForOp>(newBody);
     replaceOperand(loopBody, compute_at.getInductionVar(), lbOp.getResult());
     replaceBufferRef(loopBody, buffer, doubleBuffer);
@@ -887,8 +910,8 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
 
   /* step3: prefetch in the main loop*/
   //1. create the affine.if to check if we can prefetch
-  auto dim0 = builder.getAffineDimExpr(0);
-  auto dim1 = builder.getAffineDimExpr(1);
+  auto dim0 = builder->getAffineDimExpr(0);
+  auto dim1 = builder->getAffineDimExpr(1);
 
   int64_t step = compute_at.getStep().getLimitedValue();
   int64_t ub = compute_at.getConstantUpperBound();
@@ -910,11 +933,11 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   eqFlags.push_back(false);
   auto cst = mlir::IntegerSet::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), llvm::ArrayRef<bool>(eqFlags));
 
-  builder.setInsertionPointToStart(compute_at.getBody());
-  auto ifOp = builder.create<mlir::affine::AffineIfOp>(builder.getUnknownLoc(), cst, mlir::ValueRange{compute_at.getInductionVar()}, 
+  builder->setInsertionPointToStart(compute_at.getBody());
+  auto ifOp = builder->create<mlir::affine::AffineIfOp>(builder->getUnknownLoc(), cst, mlir::ValueRange{compute_at.getInductionVar()}, 
                                                /*withElseRegion=*/false);
   
-  builder.setInsertionPointToStart(ifOp.getThenBlock());
+  builder->setInsertionPointToStart(ifOp.getThenBlock());
 
   auto reverseReadBodys = readBodys;
   std::reverse(reverseReadBodys.begin(), reverseReadBodys.end());
@@ -1048,7 +1071,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
     });
   };
   for (auto readBody : readBodys) {
-    auto dim0 = builder.getAffineDimExpr(0);
+    auto dim0 = builder->getAffineDimExpr(0);
     replaceAffineExprInLoop(readBody, compute_at.getInductionVar(), dim0 + compute_at.getStep().getLimitedValue(), 1);
     replaceBufferRefInLoop(readBody, buffer, doubleBuffer, compute_at);
   }
@@ -1130,9 +1153,8 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   }
 
   /* step4: clear work*/
-  defineBufferOp.erase();
+  defineBufferOp->erase();
   buffer = doubleBuffer;
-
 
   return results;
 }
