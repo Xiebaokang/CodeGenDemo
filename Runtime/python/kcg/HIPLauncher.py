@@ -41,9 +41,9 @@ def make_stub(kernelLibFile : KernelLibFile) -> str :
             with open(src_path, "w") as f:
                 for line in src:
                     f.write(line)  # generate stub code
-            # with open("/home/pangyunfei/xushilong/KernelCodeGen/tempsrc.cpp", "w") as f:
-            #     for line in src:
-            #         f.write(line)  # generate stub code
+            with open("/home/pangyunfei/xushilong/CodeGenDemo/tempsrc.cpp", "w") as f:
+                for line in src:
+                    f.write(line)  # generate stub code
             so = build(so_name, src_path, tmpdir)
             with open(so, "rb") as f:
                 return so_cache_manager.put(f.read(), so_name, binary=True)
@@ -71,8 +71,10 @@ def ty_to_cpp(ty):
 
 def generate_launcher_hip(kernelLib : KernelLibFile):
     # start_desc = len(signature)
-    warp_size = DeviceInfo.get_warp_size()
+    # warp_size = DeviceInfo.get_warp_size()
     kernelSignature : dict = kernelLib.m_signature
+    # gridDims = kernelLib.m_gridDims
+    # blockDims = kernelLib.m_blockDims
     print(type(kernelSignature))
     arg_decls = ', '.join(f"{ty_to_cpp(ty)} arg{index}" for index,ty in kernelSignature.items())
 
@@ -104,7 +106,7 @@ def generate_launcher_hip(kernelLib : KernelLibFile):
             "int64_t": "L",
         }[ty]
 
-    format = "iiiiiiiiiKKOOO" + ''.join([format_of(_extracted_type(ty)) for i,ty in kernelSignature.items()])
+    format = "iiiiiiiiiiiKKOOO" + ''.join([format_of(_extracted_type(ty)) for i,ty in kernelSignature.items()])
 
     # generate glue code
     params = [i for i,ty in kernelSignature.items()]
@@ -132,11 +134,11 @@ static inline void gpuAssert(hipError_t code, const char *file, int line)
 
 #define HIP_CHECK(ans) {{ gpuAssert((ans), __FILE__, __LINE__); }}
 
-static void _launch(int gridX, int gridY, int gridZ, int num_warps, int num_ctas, int clusterDimX, int clusterDimY, int clusterDimZ, int shared_memory, hipStream_t stream, hipFunction_t function{', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
+static void _launch(int gridX, int gridY, int gridZ, int blockX, int blockY, int blockZ, int num_ctas, int clusterDimX, int clusterDimY, int clusterDimZ, int shared_memory, hipStream_t stream, hipFunction_t function{', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
   // printf("_launch hip kernel\\n");
   void *params[] = {{ {', '.join(f"&arg{i}" for i in params)} }};
   if (gridX*gridY*gridZ > 0) {{
-      HIP_CHECK(hipModuleLaunchKernel(function, gridX, gridY, gridZ, {warp_size}*num_warps, 1, 1, shared_memory, stream, params, 0));
+      HIP_CHECK(hipModuleLaunchKernel(function, gridX, gridY, gridZ, blockX, blockY, blockZ, shared_memory, stream, params, 0));
     }}
   }}
 
@@ -191,7 +193,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   int gridX, gridY, gridZ;
   uint64_t _stream;
   uint64_t _function;
-  int num_warps;
+  int blockX, blockY, blockZ; 
   int num_ctas;
   int clusterDimX;
   int clusterDimY;
@@ -201,7 +203,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   PyObject *launch_exit_hook = NULL;
   PyObject *compiled_kernel = NULL;
   {' '.join([f"{_extracted_type(ty)} _arg{i}; " for i, ty in kernelSignature.items()])}
-  if(!PyArg_ParseTuple(args, \"{format}\", &gridX, &gridY, &gridZ, &num_warps, &num_ctas, &clusterDimX, &clusterDimY, &clusterDimZ, &shared_memory, &_stream, &_function, &launch_enter_hook, &launch_exit_hook, &compiled_kernel{', ' + ', '.join(f"&_arg{i}" for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''})) {{
+  if(!PyArg_ParseTuple(args, \"{format}\", &gridX, &gridY, &gridZ, &blockX,&blockY,&blockZ, &num_ctas, &clusterDimX, &clusterDimY, &clusterDimZ, &shared_memory, &_stream, &_function, &launch_enter_hook, &launch_exit_hook, &compiled_kernel{', ' + ', '.join(f"&_arg{i}" for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''})) {{
     return NULL;
   }}
 
@@ -213,7 +215,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0] == "*" else "" for i, ty in kernelSignature.items()])};
   Py_BEGIN_ALLOW_THREADS;
-  _launch(gridX, gridY, gridZ, num_warps, num_ctas, clusterDimX, clusterDimY, clusterDimZ, shared_memory, (hipStream_t)_stream, (hipFunction_t)_function{', ' + ', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}"for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''});
+  _launch(gridX, gridY, gridZ, blockX, blockY, blockZ, num_ctas, clusterDimX, clusterDimY, clusterDimZ, shared_memory, (hipStream_t)_stream, (hipFunction_t)_function{', ' + ', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}"for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''});
   Py_END_ALLOW_THREADS;
 
   if (launch_exit_hook != Py_None) {{
@@ -384,10 +386,6 @@ PyMODINIT_FUNC PyInit___kcg_launcher(void) {{
 
 class MockData :
     def __init__(self):
-        self.grid_0 = 4096
-        self.grid_1 = 1
-        self.grid_2 = 1
-        self.num_warps = 8
         self.num_ctas = 1
         self.clusterDims = [1,1,1]
         self.shared = 16896
@@ -397,9 +395,9 @@ class MockData :
 
 
 class HIPLauncher :
-    def __init__(self, kernelBinaryPath,kernelFuncName,shmSize,signature:dict,device=DeviceInfo.get_current_device()):
+    def __init__(self, kernelBinaryPath,kernelFuncName,shmSize,signature:dict,gridDims:list,blockDims:list,device=DeviceInfo.get_current_device()):
         self.m_cWrapper = None
-        self.m_kernelLib = KernelLibFile(kernelBinaryPath,EnumBackendType.HIP,kernelFuncName,shmSize,signature,device)
+        self.m_kernelLib = KernelLibFile(kernelBinaryPath,EnumBackendType.HIP,kernelFuncName,shmSize,signature,gridDims,blockDims,device)
         self.m_launcherLibPath = None  # launcher.so 的路径
         
     def __hash__(self):
@@ -432,8 +430,10 @@ class HIPLauncher :
 
         if wrapper is None:
             raise Exception("kcg: _getWrapper failed")
-        
-        wrapper(m.grid_0,m.grid_1,m.grid_2,m.num_warps,m.num_ctas,
+        gridDims = self.m_kernelLib.m_gridDims
+        blockDims = self.m_kernelLib.m_blockDims
+        wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
+                m.num_ctas,
                 m.clusterDims[0],m.clusterDims[1],m.clusterDims[2],
                 m.shared,stream,
                 self.m_kernelLib.m_kernelInfo.m_function, 

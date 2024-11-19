@@ -8,10 +8,12 @@ class CompiledKernel:
                  kernelBinaryPath:str, 
                  kernelName:str, shmSize:int, 
                  kernel_signature,
+                 gridDims:list,
+                 blockDims:list,
                  device = DeviceInfo.get_current_device()):
         self.signature = kernel_signature
         self.m_loader = HIPLoaderST()
-        self.m_launcher = HIPLauncher(kernelBinaryPath,kernelName,shmSize,self.signature,device)
+        self.m_launcher = HIPLauncher(kernelBinaryPath,kernelName,shmSize,self.signature,gridDims,blockDims,device)
         
     def run(self,*args,**kwargs):
         if self.m_launcher is not None:

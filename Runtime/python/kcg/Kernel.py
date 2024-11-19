@@ -56,6 +56,8 @@ class KernelLibFile :
         kernelFuncName ,  # 核函数名字
         sharedMemSize,   # shm大小
         signature,   # kernel signature
+        gridDims : list,
+        blockDims : list,
         device=DeviceInfo.get_current_device()): # device号
         
         self.m_filePath = filePath
@@ -65,6 +67,8 @@ class KernelLibFile :
         self.m_kernelFuncName = kernelFuncName
         self.m_shmSize = sharedMemSize
         self.m_device = device
+        self.m_gridDims = gridDims
+        self.m_blockDims = blockDims
     
     def __hash__(self) -> int:
         return calculate_file_hash(self.m_filePath) 

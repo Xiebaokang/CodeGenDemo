@@ -33,8 +33,10 @@ class CompiledKernelFactory :
             return CompiledKernel(
                 info.hsacoPath,
                 info.kernelFuncName,
-                50000,
-                signature
+                16800,
+                signature,
+                [8,8,1],
+                [16,16,1]
             )
         if info.operatorKind==EnumOperator.Convolution :
             return None
