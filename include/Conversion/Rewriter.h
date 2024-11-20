@@ -65,7 +65,7 @@ struct Rewriter {
       return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
     }
     else{
-      return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+      return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
     }
   }
 
@@ -73,7 +73,8 @@ struct Rewriter {
     if(type.getMemorySpaceAsInt() == int(KernelCodeGen::MemorySpace::local)){
       return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
     }
-    return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
+    return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(),type);
+    // return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
   }
 
   template<typename ContextOp>
@@ -139,6 +140,8 @@ struct Rewriter {
   static void take_off_true_if(mlir::ModuleOp module);
 
   static void delete_false_if(mlir::ModuleOp module);
+
+  static void replace_alloc_shm(mlir::ModuleOp module) ;
 
   static void unroll(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn);
 

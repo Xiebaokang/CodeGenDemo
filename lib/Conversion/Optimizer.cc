@@ -291,6 +291,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, mlir::OpBuilder& bui
 
     Rewriter::take_off_true_if(module);
     Rewriter::delete_false_if(module);
+    Rewriter::replace_alloc_shm(module);
     // module.dump();
 
     int64_t threshold = std::max(config["BLOCK_SIZE_K"], std::max(config["THREAD_SIZE_M"], config["THREAD_SIZE_N"]));

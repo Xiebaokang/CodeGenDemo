@@ -160,6 +160,8 @@ struct NVVMMetadata {
 #define AttrVisibility "sym_visibility" 
 #define AttrExternLib "kcg.externLibs"
 
+#define SHM_VAR_NAME(i) (std::string("kcg_shm")+std::to_string(i))
+
 std::string getenv(const char *name);
 
 }

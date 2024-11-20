@@ -789,23 +789,27 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   auto newBufferType = mlir::MemRefType::get(
     shape, bufferType.getElementType(), {}, bufferType.getMemorySpaceAsInt());
   mlir::memref::AllocaOp allocRegistOp;
-  mlir::memref::AllocaOp allocOp;
+  mlir::memref::AllocOp allocOp;
   bool isAllocRegist = false;
   mlir::Operation* defineBufferOp = nullptr;
   // mlir::OpBuilder* builder = nullptr;
   std::shared_ptr<mlir::OpBuilder> builder = nullptr;
 
-  if(mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp()) != nullptr){
-    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());
+  if(mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp()) != nullptr){
+    defineBufferOp = mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp());
     // mlir::OpBuilder builder(defineBufferOp);
     builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
-    allocOp = builder->create<mlir::memref::AllocaOp>(builder->getUnknownLoc(), newBufferType);
+    allocOp = builder->create<mlir::memref::AllocOp>(builder->getUnknownLoc(), newBufferType);
   }
   else if(mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp()) != nullptr){
     defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());
     builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
     allocRegistOp = builder->create<mlir::memref::AllocaOp>(builder->getUnknownLoc(), newBufferType);
     isAllocRegist = true;
+  }
+  else{
+    llvm::outs() << "[D] OpName = "<< buffer.getDefiningOp()->getName().getStringRef();
+    llvm::outs().flush();
   }
   assert(builder != nullptr && "PipeLineNullptrError");
   // auto doubleBuffer = allocOp.getResult();
@@ -1478,6 +1482,54 @@ void Rewriter::delete_false_if(mlir::ModuleOp module) {
   }
   return;
 }
+
+// replace alloc<shared> to getGlobalOp
+
+struct ReplaceAllocOpToGetGlobalOp : public mlir::PassWrapper<ReplaceAllocOpToGetGlobalOp, mlir::OperationPass<mlir::ModuleOp>> {
+   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ReplaceAllocOpToGetGlobalOp)
+   ReplaceAllocOpToGetGlobalOp() = default;
+   void runOnOperation() override {
+     auto module = getOperation();
+    int i = 0;
+     std::vector<mlir::MemRefType> memTypesToAdd {};
+     module.walk<mlir::WalkOrder::PreOrder>([&](mlir::memref::AllocOp allocOp) {
+      auto memspace = allocOp.getResult().getType().getMemorySpaceAsInt();
+      if(memspace == (int)KernelCodeGen::MemorySpace::shared){
+        mlir::OpBuilder builder(allocOp);
+        mlir::OpBuilder b(module);
+        b.setInsertionPointToStart(module.getBody());
+        b.create<mlir::memref::GlobalOp>(
+          b.getUnknownLoc(),
+          SHM_VAR_NAME(i),
+          b.getStringAttr("public"),
+          allocOp.getResult().getType(),
+          mlir::Attribute(),
+          false,
+          mlir::IntegerAttr()
+          );
+        auto newop = builder.create<mlir::memref::GetGlobalOp>(
+          builder.getUnknownLoc(),allocOp.getResult().getType(),SHM_VAR_NAME(i));
+        allocOp.getResult().replaceAllUsesWith(newop);
+        allocOp.erase();
+        ++i;
+      }
+     });
+   }
+}; 
+
+std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> ReplaceAllocToGetglobalPass() {
+  return std::make_unique<ReplaceAllocOpToGetGlobalOp>();
+}
+
+void Rewriter::replace_alloc_shm(mlir::ModuleOp module) {
+  mlir::PassManager pm(module.getContext());
+  pm.addPass(ReplaceAllocToGetglobalPass());
+  if (mlir::failed(pm.run(module))) {
+    llvm::errs() << "replace_alloc_shm failed.";
+  }
+  return;
+}
+
 
 struct UnrollAffineFor : public mlir::PassWrapper<UnrollAffineFor, mlir::OperationPass<mlir::ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(UnrollAffineFor)

@@ -13,8 +13,38 @@ import sys
 
 
 class kcgData:
-    hsacoPath='/tmp/kcg_kernel-e51cde/kcg_kernel-e51cde.hsaco'
+    hsacoPath='/tmp/kcg_kernel-6e4089/kcg_kernel-6e4089.hsaco'
     funName = 'Matmul_m1024n1024k1024_randomString'
+
+class kcgData_1:
+    hsacoPath='/tmp/kcg_kernel-07b4bb/kcg_kernel-07b4bb.hsaco'
+    funName = 'Matmul_m1024n1024k1024_randomString'
+    des = 'wavespereu=1,local=0'
+    res='''
+    kernel-name:"Matmul_m1024n1024k1024_randomString"
+ kernel dispatch index                     5
+ gpu id                                    0
+ dispatch queue id                         0
+ dispatch queue index                      6
+ thread id                                 3941291
+ grid size                                 16384
+ work group size                           256
+ shared memory size                        16896
+ scratch size                              16388
+ vgpr count                                26
+ sgpr count                                2
+ fbarrier count                            0
+ signal handle                             0x0
+ kernel time                               0.001434(s)
+ processed ALU instructions                15.878180(%)
+ performance                               1715.676759(Gflops)
+ shared memory operation                   2260736
+ shared memory bank conflict               11.693879(%)
+ L1 cache unit is active                   18.687479(%)
+ L1 cache unit is stalled                  0.345780(%)
+ L2 cache write unit is stalled            0.227867(%)
+ L2 cache hit rate                         82.671241(%)
+    '''
 
 class tritonData_finalLL_opt: # OK
     funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
@@ -108,3 +138,5 @@ if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
     print('test correct!')
 else:
     print('test fail')
+    
+    # hipprof --pmc python ./test.py 
