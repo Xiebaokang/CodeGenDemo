@@ -28,22 +28,22 @@ bool MatmulOptimizer::applicable(mlir::ModuleOp& module) {
   return res;
 }
 
-int64_t smAReadSride(int64_t blockDim, int64_t warpSize) {
+int64_t smAReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutN, int64_t warpLayoutM) {
   int64_t warpNum = blockDim / warpSize;
-  int64_t laneNum = warpSize;
+  // int64_t laneNum = warpSize;
   //warp orgnize: 2 x 4
-  std::vector<int64_t> warpOrg {2, 4};
-  std::vector<int64_t> threadOrg {8, 4};
-  return (warpNum / warpOrg[1]) * threadOrg[0];
+  // std::vector<int64_t> warpOrg {2, 4};
+  // std::vector<int64_t> threadOrg {8, 4};
+  return (warpNum / blockLayoutN) * warpLayoutM;
 }
 
-int64_t smBReadSride(int64_t blockDim, int64_t warpSize) {
+int64_t smBReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutM, int64_t warpLayoutN) {
   int64_t warpNum = blockDim / warpSize;
-  int64_t laneNum = warpSize;
+  // int64_t laneNum = warpSize;
   //warp orgnize: 2 x 4
-  std::vector<int64_t> warpOrg {2, 4};
-  std::vector<int64_t> threadOrg {8, 4};
-  return (warpNum / warpOrg[0]) * threadOrg[1];
+  // std::vector<int64_t> warpOrg {2, 4};
+  // std::vector<int64_t> threadOrg {8, 4};
+  return (warpNum / blockLayoutM) * warpLayoutN;
 }
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
@@ -60,8 +60,8 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   bool vectorize = config.count("VECTORIZE_WIDTH") != 0;
   int width = vectorize ? config["VECTORIZE_WIDTH"] : 1;
 
-  std::vector<int64_t> warpOrg {2, 4};  
-  std::vector<int64_t> threadOrg {8, 4};
+  std::vector<int64_t> warpOrg {config["BLOCK_LAYOUT_M"], config["BLOCK_LAYOUT_N"]};  
+  std::vector<int64_t> threadOrg {config["WARP_LAYOUT_M"], config["WARP_LAYOUT_N"]};
 
   if (mapIdentifier == "loadTileA") {
     // dims are:[dim0, dim1, dim2, dim3, dim4]
@@ -196,8 +196,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, mlir::OpBuilder& bui
 
     auto ldgASize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;
     auto ldgBSize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;
-    auto fragASize = config["BLOCK_SIZE_M"] / smAReadSride(blockThreads, config["WARP_SIZE"]);
-    auto fragBSize = config["BLOCK_SIZE_N"] / smBReadSride(blockThreads, config["WARP_SIZE"]);
+    auto fragASize = config["BLOCK_SIZE_M"] / smAReadSride(blockThreads, config["WARP_SIZE"], 
+                                                          config["BLOCK_LAYOUT_N"], config["WARP_LAYOUT_M"]);
+    auto fragBSize = config["BLOCK_SIZE_N"] / smBReadSride(blockThreads, config["WARP_SIZE"], 
+                                                          config["BLOCK_LAYOUT_M"], config["WARP_LAYOUT_N"]);
     auto elementA = A.getType().dyn_cast<mlir::MemRefType>().getElementType();
     auto elementB = B.getType().dyn_cast<mlir::MemRefType>().getElementType();
 
