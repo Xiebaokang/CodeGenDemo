@@ -46,6 +46,9 @@ class UserInputs:
     def blockDims(self):
         return [self.tiling.BLOCK_LAYOUT_M * self.tiling.WARP_LAYOUT_M,
                 self.tiling.BLOCK_LAYOUT_N * self.tiling.WARP_LAYOUT_N, 1 ]
+        
+    def sharedMem(self,m,n,k):
+        return 2*(m+n)*k*4
     
 # 用户输入：hsacopath，kernel名字(通过amdgcn获取)，
 class CompiledKernelFactory :
@@ -53,12 +56,13 @@ class CompiledKernelFactory :
     def getKernel(info : UserInputs) -> CompiledKernel:
         if info.operatorKind==EnumOperator.Matmul :
             signature = getMatmulSignature(info.dtype_0,info.dtype_1)
+            m,n,k = 1024,1024,1024
             return CompiledKernel(
                 info.hsacoPath,
                 info.kernelFuncName,
-                16800,
+                info.sharedMem(m,n,k),
                 signature,
-                info.gridDims(1024,1024,1024),
+                info.gridDims(m,n,k),
                 info.blockDims()
             )
         if info.operatorKind==EnumOperator.Convolution :
