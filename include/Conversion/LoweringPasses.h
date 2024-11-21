@@ -25,4 +25,6 @@ std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass()
 std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::string& libsPath, const std::string& gfx_arch);
 
 std::unique_ptr<OperationPass<ModuleOp>> ReplaceAllocToGetglobalPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createCombineMemrefPass();
 }

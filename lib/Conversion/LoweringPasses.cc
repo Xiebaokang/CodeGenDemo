@@ -57,7 +57,7 @@ struct SCFParallelToGPULowering : public OpRewritePattern<scf::ParallelOp> {
 
     // 将func设置block和thread的上界属性
     auto parentOp = outerParallelOp->getParentOp();
-    auto funcOp = llvm::dyn_cast<func::FuncOp>(parentOp);
+    auto funcOp = mlir::dyn_cast<func::FuncOp>(parentOp);
     if (funcOp == nullptr) {
       llvm::errs() << "The ParentOp of scf::ParallelOp must is FuncOp!\n";
       assert(false);
@@ -143,9 +143,9 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
     }
 
     auto parentOp = idOp->getParentOp();
-    auto funcOp = llvm::dyn_cast<func::FuncOp>(parentOp);
+    auto funcOp = mlir::dyn_cast<func::FuncOp>(parentOp);
     if (!boundsAttrName.empty() && funcOp) {
-      if (auto attr = llvm::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr(boundsAttrName))) {
+      if (auto attr = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr(boundsAttrName))) {
         int32_t maximum = attr[static_cast<uint32_t>(idOp.getDimension())];
         newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI32ArrayAttr({0, maximum}));
       }
@@ -202,28 +202,28 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ROCDLIdOpModifyPass)
   
   void runOnOperation() override {
-    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
     for (Operation &op : module.getBody()->getOperations()) {
-      auto funcOp = llvm::dyn_cast<func::FuncOp>(&op);
+      auto funcOp = mlir::dyn_cast<func::FuncOp>(&op);
       if (funcOp == nullptr) {
         llvm::errs() << "there is other operations which is not funcOp in the module!\n";
         assert(false);
       }
-      auto blockDims = llvm::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.grid.dim"));
-      auto threadDims = llvm::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.block.dim"));
+      auto blockDims = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.grid.dim"));
+      auto threadDims = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.block.dim"));
 
       funcOp.walk([&](Operation *op) {
-        if (auto blockIdXOp = llvm::dyn_cast<ROCDL::BlockIdXOp>(op)) {
+        if (auto blockIdXOp = mlir::dyn_cast<ROCDL::BlockIdXOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, blockDims[0]}));
-        } else if (auto blockIdYOp = llvm::dyn_cast<ROCDL::BlockIdYOp>(op)) {
+        } else if (auto blockIdYOp = mlir::dyn_cast<ROCDL::BlockIdYOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, blockDims[1]}));
-        } else if (auto blockIdZOp = llvm::dyn_cast<ROCDL::BlockIdZOp>(op)) {
+        } else if (auto blockIdZOp = mlir::dyn_cast<ROCDL::BlockIdZOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, blockDims[2]}));
-        } else if (auto threadIdXOp = llvm::dyn_cast<ROCDL::ThreadIdXOp>(op)) {
+        } else if (auto threadIdXOp = mlir::dyn_cast<ROCDL::ThreadIdXOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, threadDims[0]}));
-        } else if (auto threadIdYOp = llvm::dyn_cast<ROCDL::ThreadIdYOp>(op)) {
+        } else if (auto threadIdYOp = mlir::dyn_cast<ROCDL::ThreadIdYOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, threadDims[1]}));
-        } else if (auto threadIdZOp = llvm::dyn_cast<ROCDL::ThreadIdZOp>(op)) {
+        } else if (auto threadIdZOp = mlir::dyn_cast<ROCDL::ThreadIdZOp>(op)) {
           op->setAttr("range", DenseI32ArrayAttr::get(module.getContext(), {0, threadDims[2]}));
         }
       });
@@ -236,11 +236,11 @@ struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass,
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(EraseRedundantUnCCastPass)
   
   void runOnOperation() override {
-    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
     SmallVector<std::pair<Operation*, Operation*>> pairOps;
     SmallVector<Operation*> noChOps;
     module.walk([&](Operation *op){
-      if (auto uccOp = llvm::dyn_cast<UnrealizedConversionCastOp>(op)) {
+      if (auto uccOp = mlir::dyn_cast<UnrealizedConversionCastOp>(op)) {
         for (auto &use: uccOp.getResult(0).getUses()) {
           Operation *nextOp = use.getOwner();
           if (isa<UnrealizedConversionCastOp>(nextOp))
@@ -253,8 +253,8 @@ struct EraseRedundantUnCCastPass : public PassWrapper<EraseRedundantUnCCastPass,
       }
     });
     for (auto pairOp: pairOps) {
-      auto firstOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.first);
-      auto secondOp = llvm::dyn_cast<UnrealizedConversionCastOp>(pairOp.second);
+      auto firstOp = mlir::dyn_cast<UnrealizedConversionCastOp>(pairOp.first);
+      auto secondOp = mlir::dyn_cast<UnrealizedConversionCastOp>(pairOp.second);
       if (firstOp.getOperand(0).getType() == secondOp.getResult(0).getType()) {
         secondOp.getResult(0).replaceAllUsesWith(firstOp.getOperand(0));
       }
@@ -273,7 +273,7 @@ struct ConvertArithIndexToI64Pass : public PassWrapper<ConvertArithIndexToI64Pas
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ConvertArithIndexToI64Pass)
 
   void runOnOperation() override {
-    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
     module.walk([&](Operation *op) {
       if (auto constantOp = dyn_cast<arith::ConstantOp>(op)) {
         Type constantType = constantOp.getValue().getType();
@@ -329,7 +329,7 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
   void runOnOperation() override {
     getOperation().walk([&] (affine::AffineForOp forOp){
       if (auto unrollName = forOp->getAttr("affine.loop")) {
-        auto unrollAttr = llvm::dyn_cast<mlir::StringAttr>(unrollName);
+        auto unrollAttr = mlir::dyn_cast<mlir::StringAttr>(unrollName);
         // llvm::outs() << unrollAttr.getValue().str() << "\n";
         if (unrollAttr.getValue().str() == "unroll") {
           if (failed(affine::loopUnrollFull(forOp))) {
@@ -378,7 +378,7 @@ struct ReplacePtrtointAndCallOp : public OpRewritePattern<LLVM::PtrToIntOp> {
     auto newPtrOp = rewriter.create<LLVM::PtrToIntOp>(ptrOp.getLoc(), rewriter.getIntegerType(64), argPtr);
     auto users = ptrOp.getResult().getUsers();
     for (auto user : users) {
-      if (auto callOp = llvm::dyn_cast<LLVM::CallOp>(user)) {
+      if (auto callOp = mlir::dyn_cast<LLVM::CallOp>(user)) {
         rewriter.setInsertionPointAfter(callOp);
         auto newCallOp = rewriter.create<LLVM::CallOp>(callOp->getLoc(), newFuncOp, ValueRange({newPtrOp.getResult()}));
         // callOp.getResult().replaceAllUsesWith(newCallOp.getResult());
@@ -401,7 +401,7 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MallocFuncOpArgTypeI32ToI64Pass)
 
   void runOnOperation() override {
-    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
     auto reuslt = createI64MallocFuncOp(module);
     replacePtrtointAndCallOp(module, reuslt.first);   // create i64 malloc
     deleteI32MallocFuncOp(reuslt.second);   // erase i32 malloc
@@ -423,7 +423,7 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
 
       auto users = ptrOp.getResult().getUsers();
       for (auto user : users) {
-        if (auto callOp = llvm::dyn_cast<LLVM::CallOp>(user)) {
+        if (auto callOp = mlir::dyn_cast<LLVM::CallOp>(user)) {
           buidler.setInsertionPointAfter(callOp);
           auto newCallOp = buidler.create<LLVM::CallOp>(callOp->getLoc(), mallocFuncOp, ValueRange({newPtrOp.getResult()}));
           callOp.getResult().replaceAllUsesWith(newCallOp.getResult());
@@ -440,7 +440,7 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
 
   std::pair<LLVM::LLVMFuncOp, LLVM::LLVMFuncOp> createI64MallocFuncOp(ModuleOp &module) {
     for (Operation &op : module.getBody()->getOperations()) {
-      if (auto funcOp = llvm::dyn_cast<LLVM::LLVMFuncOp>(&op)) {
+      if (auto funcOp = mlir::dyn_cast<LLVM::LLVMFuncOp>(&op)) {
         if (funcOp.getName() != "malloc") {
           continue;
         } else {
@@ -478,7 +478,7 @@ struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass
                : libsPath(libsPath_), gfx_arch(gfx_arch_) {};
 
   void runOnOperation() override {
-    auto module = llvm::dyn_cast<ModuleOp>(getOperation());
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
     const auto& bcfiles = getROCMBitcodefiles();
     llvm::SmallVector<NamedAttribute, 2> attrs;
     for (size_t i = 0; i < bcfiles.size(); ++i) {
@@ -579,6 +579,108 @@ struct ReplaceAllocOpToGetGlobalOp : public PassWrapper<ReplaceAllocOpToGetGloba
    }
 }; 
 
+// 将alloc和alloca操作合并，生成一个memref
+struct CombineMemrefPass : public PassWrapper<CombineMemrefPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CombineMemrefPass)
+
+  void runOnOperation() override {
+    auto module = mlir::dyn_cast<ModuleOp>(getOperation());
+    for (Operation &op : module.getBody()->getOperations()) {
+      if (auto funcOp = mlir::dyn_cast<func::FuncOp>(&op)) {
+        combineAllocOrAllocaOp<memref::AllocOp>(funcOp);
+        combineAllocOrAllocaOp<memref::AllocaOp>(funcOp);
+      }
+    }
+  }
+
+  template <typename LoadOrStoreOp>
+  AffineMap moreDimToOneDimMap(LoadOrStoreOp op, int64_t startIndex, llvm::ArrayRef<int64_t> shapes, MLIRContext* context) {
+    auto oldAffineMap = op.getAffineMap();
+    auto oldExprs = oldAffineMap.getResults();
+    OpBuilder b(context);
+    AffineExpr expr = b.getAffineConstantExpr(0);
+    for (size_t i=0; i<oldExprs.size(); i++) {
+      int num = 1;
+      for (size_t j=i+1; j<shapes.size(); j++) {
+        num *= shapes[j];
+      }
+      expr = expr + oldExprs[i] * num;
+    }
+    expr = startIndex + expr;
+    auto map = AffineMap::get(oldAffineMap.getNumDims(), 0, llvm::ArrayRef<mlir::AffineExpr>({expr}), context);
+    return map;
+  }
+
+  
+  template<typename AllocOrAllocaOp>
+  void combineAllocOrAllocaOp(func::FuncOp &funcOp) {
+    int64_t memSize = 0;
+    llvm::DenseMap<AllocOrAllocaOp, int64_t> indexMap;
+    AllocOrAllocaOp firstOp = nullptr;
+    MemRefType type;
+
+    funcOp.walk<WalkOrder::PreOrder>([&](AllocOrAllocaOp allocOp) {
+      if (memSize == 0) firstOp = allocOp;
+      indexMap.try_emplace(allocOp, memSize);
+      type = mlir::dyn_cast<MemRefType>(allocOp.getResult().getType());
+      int64_t temp = 1;
+      for (auto shape : type.getShape()) {
+        temp *= shape;
+      }
+      memSize += temp;
+    });
+    if (!memSize) return;
+
+    OpBuilder b(firstOp);
+    auto newType = MemRefType::get({memSize}, type.getElementType(), {}, type.getMemorySpaceAsInt());
+    auto newAllocOp = b.create<AllocOrAllocaOp>(firstOp.getLoc(), newType);
+
+    for (const auto& pair : indexMap) {
+      Value result = pair.first->getResult(0);
+      auto t = mlir::dyn_cast<MemRefType>(result.getType());
+      auto shapes = t.getShape();
+
+      SmallVector<Operation *> users;
+
+      for (auto user : result.getUsers()) {
+        users.push_back(user);
+      }
+      // auto users = result.getUsers();
+
+      for (auto user : users) {
+        if (auto loadOp = mlir::dyn_cast<affine::AffineLoadOp>(user)) {
+          auto map = moreDimToOneDimMap(loadOp, pair.second, shapes, loadOp->getContext());
+          b.setInsertionPointAfter(loadOp);
+          auto newLoadOp = b.create<affine::AffineLoadOp>(loadOp.getLoc(), newAllocOp.getResult(), map, loadOp.getMapOperands());
+          loadOp.getResult().replaceAllUsesWith(newLoadOp.getResult());
+          loadOp.erase();
+
+        } else if (auto storeOp = mlir::dyn_cast<affine::AffineStoreOp>(user)) {
+          auto map = moreDimToOneDimMap(storeOp, pair.second, shapes, storeOp->getContext());
+          b.setInsertionPointAfter(storeOp);
+          b.create<affine::AffineStoreOp>(storeOp.getLoc(), storeOp.getValue(), newAllocOp.getResult(), map, storeOp.getMapOperands());
+          storeOp.erase();
+
+        } else if (auto vectorLoadOp = mlir::dyn_cast<affine::AffineVectorLoadOp>(user)) {
+          auto map = moreDimToOneDimMap(vectorLoadOp, pair.second, shapes, vectorLoadOp->getContext());
+          b.setInsertionPointAfter(vectorLoadOp);
+          auto newVectorLoadOp = b.create<affine::AffineVectorLoadOp>(vectorLoadOp.getLoc(), vectorLoadOp.getVectorType(), 
+                                                              newAllocOp.getResult(), map, vectorLoadOp.getMapOperands());
+          vectorLoadOp.getResult().replaceAllUsesWith(newVectorLoadOp.getResult());
+          vectorLoadOp.erase();
+
+        } else if (auto vectorStoreOp = mlir::dyn_cast<affine::AffineVectorStoreOp>(user)) {
+          auto map = moreDimToOneDimMap(vectorStoreOp, pair.second, shapes, vectorStoreOp->getContext());
+          b.setInsertionPointAfter(vectorStoreOp);
+          b.create<affine::AffineVectorStoreOp>(vectorStoreOp.getLoc(), vectorStoreOp.getValue(), 
+                                            newAllocOp.getResult(), map, vectorStoreOp.getMapOperands());
+          vectorStoreOp.erase();
+        }
+      }
+      pair.first->erase();
+    }
+  }
+};
 
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
@@ -615,6 +717,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::str
 
 std::unique_ptr<OperationPass<ModuleOp>> ReplaceAllocToGetglobalPass() {
   return std::make_unique<ReplaceAllocOpToGetGlobalOp>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createCombineMemrefPass() {
+  return std::make_unique<CombineMemrefPass>();
 }
 
 }

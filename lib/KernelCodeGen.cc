@@ -43,6 +43,7 @@ std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, 
 
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::string& libsPath, const std::string& gfx_arch) {
   mlir::PassManager pm(&context);
+  pm.addPass(createCombineMemrefPass());
   pm.addPass(ReplaceAllocToGetglobalPass());
   // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
