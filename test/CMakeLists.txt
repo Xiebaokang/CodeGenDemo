@@ -1,2 +1,5 @@
-add_executable(codegen test.cc)
-target_link_libraries(codegen PUBLIC kcg_runtime)
+set(outName "kcg_compiler")
+include_directories("/home/pangyunfei/anaconda3/envs/triton_rocm/include/python3.8")
+link_directories(/home/pangyunfei/anaconda3/envs/triton_rocm/lib)
+add_library(${outName} SHARED test.cc)
+target_link_libraries(${outName} kcg_runtime python3.8)

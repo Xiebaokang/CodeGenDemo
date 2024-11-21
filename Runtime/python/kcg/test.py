@@ -10,6 +10,7 @@ from kcg.Kernel import *
 from kcg.CompiledKernelFactory import *
 from kcg.Operators import matmul
 import sys
+from kcg.KCGCompiler import KCGCompiler
 
 
 class kcgData:
@@ -93,12 +94,39 @@ Aborted (core dumped)
 #    基于mlirmodule的数据做amendFUnction ： 影响符号表生成
 # '''
 
+ts = TilingScheme()
+ts.BLOCK_SIZE_M= 64
+ts.BLOCK_SIZE_N=64
+ts.BLOCK_SIZE_K=16
+ts.THREAD_SIZE_M= 4
+ts.THREAD_SIZE_N= 4
+ts.VECTORIZE_WIDTH= 4
+ts.WARP_SIZE= 64 
+ts.BLOCK_LAYOUT_M= 4
+ts.BLOCK_LAYOUT_N= 1
+ts.WARP_LAYOUT_M= 4
+ts.WARP_LAYOUT_N= 16
 
+kernelCompiler = KCGCompiler()
+hsacoPath = kernelCompiler.compile_kernel(
+    ts.BLOCK_SIZE_M,
+    ts.BLOCK_SIZE_N,
+    ts.BLOCK_SIZE_K,
+    ts.THREAD_SIZE_M,
+    ts.THREAD_SIZE_N,
+    ts.VECTORIZE_WIDTH,
+    ts.WARP_SIZE,
+    ts.BLOCK_LAYOUT_M,
+    ts.BLOCK_LAYOUT_N,
+    ts.WARP_LAYOUT_M,
+    ts.WARP_LAYOUT_N 
+)
 
-
+print("========= hsacoPath = ",hsacoPath)
 dataCollection = kcgData
+dataCollection.hsacoPath = hsacoPath
 
-inConfig = UserInputs(dataCollection.hsacoPath,dataCollection.funName)
+inConfig = UserInputs(dataCollection.hsacoPath,dataCollection.funName,ts)
 inConfig.operatorKind = EnumOperator.Matmul
 inConfig.dtype_0 = torch.float32
 inConfig.dtype_1 = torch.float32
