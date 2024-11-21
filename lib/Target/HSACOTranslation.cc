@@ -161,21 +161,21 @@ namespace KernelCodeGen
                                      llvm::CodeGenFileType::AssemblyFile);
         pass.run(*module);
 
-        std::error_code EC;
-        llvm::raw_fd_ostream fileOS("/home/pangyunfei/xie/CodeGenDemo/log/translateLLVMIRToHSACO.log", EC,
-                                    llvm::sys::fs::OF_Text);
+        // std::error_code EC;
+        // llvm::raw_fd_ostream fileOS("/home/pangyunfei/xie/CodeGenDemo/log/translateLLVMIRToHSACO.log", EC,
+        //                             llvm::sys::fs::OF_Text);
 
-        if (EC)
-        {
-            llvm::errs() << "Could not open file: " << EC.message() << "\n";
-        }
+        // if (EC)
+        // {
+        //     llvm::errs() << "Could not open file: " << EC.message() << "\n";
+        // }
 
         std::string amdgcn(buffer.begin(), buffer.end());
-        if (getBoolEnv("AMDGCN_ENABLE_DUMP"))
-        {
-            fileOS << "// -----// AMDGCN Dump //----- //\n"
-                   << amdgcn << '\n';
-        }
+        // if (getBoolEnv("AMDGCN_ENABLE_DUMP"))
+        // {
+        //     fileOS << "// -----// AMDGCN Dump //----- //\n"
+        //            << amdgcn << '\n';
+        // }
 
         return amdgcn;
     }

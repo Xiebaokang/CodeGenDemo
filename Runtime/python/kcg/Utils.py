@@ -223,6 +223,10 @@ class DeviceInfo :
 # 路径管理器。存放了各种路径设置
 class PathManager :
     @staticmethod
+    def project_dir()->str:
+        return Path(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
+    
+    @staticmethod
     def default_cache_dir()->str:
         return os.path.join(Path.home(), ".kcg", "cache")
 
@@ -236,8 +240,12 @@ class PathManager :
 
     @staticmethod
     def loader_c_path_hip()->str:
-        return "/home/pangyunfei/xushilong/KernelCodeGen/src/Runtime/python/kcg/loaderCCode/hip.c"
+        return os.path.join(PathManager.project_dir(),"Runtime/python/kcg/loaderCCode/hip.c")
     @staticmethod
     def loader_c_path_cuda()->str:
-        return "/home/pangyunfei/xushilong/KernelCodeGen/src/Runtime/python/kcg/loaderCCode/cuda.c"
+        return os.path.join(PathManager.project_dir(),"Runtime/python/kcg/loaderCCode/cuda.c")
     
+    @staticmethod
+    def kcg_compiler_path()->str:
+        return os.path.join(PathManager.project_dir(),"bin/libkcg_compiler.so")
+        # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
