@@ -2,6 +2,7 @@
 #include "Target/HSACOTranslation.h"
 #include <dlfcn.h>
 #include <filesystem>
+#include <fstream>
 
 namespace KernelCodeGen {
 
@@ -107,9 +108,10 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
   // pm.addPass(createMallocFuncOpArgTypeI32ToI64Pass());                      // 将malloc 的 func 的函数签名换成 i64，ptrtointOp/callOp跟着换（因为如果强制使用malloci32，后续llvmtranslation报错，llvm malloc只支持i64）
-
-  if (mlir::failed(pm.run(mod)))
+  pm.addPass(createGlobalShmSetZeroPass());
+  if (mlir::failed(pm.run(mod))){
     return false;
+  }  
   return true;  
 }
 
@@ -137,11 +139,22 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   const int wavesPerEU = 0;
   const std::string gfx_triple{"amdgcn-amd-amdhsa"};
   const std::string gfx_features{""};
+#if 1
   std::string llvmIR = std::move(translateMLIRToLLVMIR(mod, target, wavesPerEU));
   // std::tuple<std::string, std::string> result = translateLLVMIRToHSACO(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
   // return std::get<1>(result);
   std::cout << "\n====llvmIR\n" << llvmIR << std::endl;
+#else
 
+  // test insert 
+  std::ifstream ifs("/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/testLLVMIR.mlir");
+  std::stringstream buffer;
+  if(ifs.is_open()){
+    buffer << ifs.rdbuf();
+    ifs.close();
+  }
+  auto llvmIR = buffer.str();
+#endif
   return generateAmdgcnAndHsacoFromLLIRFile(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
 }
 

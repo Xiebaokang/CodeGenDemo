@@ -84,6 +84,7 @@ std::string _compile(const UserTilingInputs& cfg ) {
   return hsacoPath;
 }
 
+#ifdef COMPILE_AS_PYMODULE
 static PyObject* compile_kernel(PyObject* self, PyObject* args) {
   UserTilingInputs cfg;
   cfg.m_type = MdlOperatorType::Matmul;
@@ -130,3 +131,24 @@ PyMODINIT_FUNC PyInit_KCGCompiler(void) {
   PyModule_AddFunctions(m, ModuleMethods);
   return m;
 }
+
+#else
+
+int main(){
+  UserTilingInputs data;
+  data.m_BLOCK_SIZE_M= 64;
+  data.m_BLOCK_SIZE_N=64;
+  data.m_BLOCK_SIZE_K=16;
+  data.m_THREAD_SIZE_M= 4;
+  data.m_THREAD_SIZE_N= 4;
+  data.m_VECTORIZE_WIDTH= 4;
+  data.m_WARP_SIZE= 64 ;
+  data.m_BLOCK_LAYOUT_M= 4;
+  data.m_BLOCK_LAYOUT_N= 1;
+  data.m_WARP_LAYOUT_M= 4;
+  data.m_WARP_LAYOUT_N= 16;
+  _compile(data);
+  return 0;
+}
+
+#endif

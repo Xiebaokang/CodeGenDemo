@@ -365,6 +365,57 @@ struct VectorToLLVMPass : public PassWrapper<VectorToLLVMPass, OperationPass<Mod
   }
 };
 
+// 将globalshm的尺寸修改为0
+struct SetShmSizeZeroPass : public PassWrapper<SetShmSizeZeroPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(SetShmSizeZeroPass)
+
+  SetShmSizeZeroPass() {};
+
+  void runOnOperation() override {
+    auto mod = getOperation();
+    std::vector<mlir::LLVM::GlobalOp> globalOps = {};
+    mod.walk([&](mlir::LLVM::GlobalOp op){
+      auto type = op.getGlobalType();
+      auto arrTy = mlir::dyn_cast<mlir::LLVM::LLVMArrayType>(type);
+      auto newType = mlir::LLVM::LLVMArrayType::get(arrTy.getElementType(),0);
+      auto builder = mlir::OpBuilder(op);
+      //  static void build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, Type type, bool isConstant, Linkage linkage, StringRef name, Attribute value, uint64_t alignment = 0, unsigned addrSpace = 0, bool dsoLocal = false, bool thread_local_ = false, SymbolRefAttr comdat = {}, ArrayRef<NamedAttribute> attrs = {});
+      uint64_t align = 0;
+      if(op.getAlignment()){
+        align = op.getAlignment().value();
+      }
+      auto newOp = builder.create<mlir::LLVM::GlobalOp>(builder.getUnknownLoc(),
+        newType,
+        op.getConstant(),
+        op.getLinkage(),
+        op.getSymName(),
+        op.getValueAttr(),
+        align,
+        op.getAddrSpace(),
+        op.getDsoLocal(),
+        op.getThreadLocal_()
+      );
+      auto useRange = op.getSymbolUses(mod);
+      op.replaceAllSymbolUses(newOp.getSymNameAttr(),mod);
+      op.erase();
+      globalOps.push_back(newOp);
+    });
+    assert(globalOps.size() == 1);
+    mod.walk([&](mlir::LLVM::AddressOfOp op){
+      auto operand_0 = op.getODSOperands(0);
+      auto builder = mlir::OpBuilder(op);
+      auto ptr = mlir::dyn_cast_if_present<mlir::LLVM::LLVMPointerType>(op.getRes().getType());
+      // auto ptr = op.getRes().dyn_cast<mlir::LLVM::LLVMPointerType>();
+      if(ptr.getAddressSpace() == (int)KernelCodeGen::MemorySpace::shared){
+          // static void build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, GlobalOp global, ArrayRef<NamedAttribute> attrs = {});
+        mlir::Value newOp = builder.create<mlir::LLVM::AddressOfOp>(builder.getUnknownLoc(),globalOps[0]);
+        op.replaceAllUsesWith(newOp);
+        op.erase();
+      }
+    });
+  }
+};
+
 // ***弃用*** 使用函数代替了没有写模式匹配了，因为一直报错
 struct ReplacePtrtointAndCallOp : public OpRewritePattern<LLVM::PtrToIntOp> {
   using OpRewritePattern<LLVM::PtrToIntOp>::OpRewritePattern;
@@ -705,6 +756,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass() {
 
 std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBitWidth) {
   return std::make_unique<VectorToLLVMPass>(indexBitWidth);
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createGlobalShmSetZeroPass() {
+  return std::make_unique<SetShmSizeZeroPass>();
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass() {

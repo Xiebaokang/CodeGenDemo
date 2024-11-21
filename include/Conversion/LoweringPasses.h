@@ -20,6 +20,8 @@ std::unique_ptr<OperationPass<ModuleOp>> createAffineFullUnrollPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBitWidth);
 
+std::unique_ptr<OperationPass<ModuleOp>> createGlobalShmSetZeroPass();
+
 std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::string& libsPath, const std::string& gfx_arch);
