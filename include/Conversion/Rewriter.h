@@ -141,8 +141,6 @@ struct Rewriter {
 
   static void delete_false_if(mlir::ModuleOp module);
 
-  static void replace_alloc_shm(mlir::ModuleOp module) ;
-
   static void unroll(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn);
 
   static void unrollAttribute(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn);

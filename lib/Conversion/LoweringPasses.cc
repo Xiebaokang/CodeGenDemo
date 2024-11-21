@@ -545,6 +545,41 @@ struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass
 };
 
 
+// replace alloc<shared> to getGlobalOp
+
+struct ReplaceAllocOpToGetGlobalOp : public PassWrapper<ReplaceAllocOpToGetGlobalOp, OperationPass<ModuleOp>> {
+   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ReplaceAllocOpToGetGlobalOp)
+   ReplaceAllocOpToGetGlobalOp() = default;
+   void runOnOperation() override {
+     auto module = getOperation();
+    int i = 0;
+     std::vector<MemRefType> memTypesToAdd {};
+     module.walk<WalkOrder::PreOrder>([&](memref::AllocOp allocOp) {
+      auto memspace = allocOp.getResult().getType().getMemorySpaceAsInt();
+      if(memspace == (int)KernelCodeGen::MemorySpace::shared){
+        OpBuilder builder(allocOp);
+        OpBuilder b(module);
+        b.setInsertionPointToStart(module.getBody());
+        b.create<memref::GlobalOp>(
+          b.getUnknownLoc(),
+          SHM_VAR_NAME(i),
+          b.getStringAttr("public"),
+          allocOp.getResult().getType(),
+          Attribute(),
+          false,
+          IntegerAttr()
+          );
+        auto newop = builder.create<memref::GetGlobalOp>(
+          builder.getUnknownLoc(),allocOp.getResult().getType(),SHM_VAR_NAME(i));
+        allocOp.getResult().replaceAllUsesWith(newop);
+        allocOp.erase();
+        ++i;
+      }
+     });
+   }
+}; 
+
+
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();
 }
@@ -576,6 +611,10 @@ std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass()
 
 std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::string& libsPath, const std::string& gfx_arch) {
   return std::make_unique<AddExternalLibPass>(libsPath, gfx_arch);
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> ReplaceAllocToGetglobalPass() {
+  return std::make_unique<ReplaceAllocOpToGetGlobalOp>();
 }
 
 }
