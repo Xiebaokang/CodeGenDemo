@@ -28,6 +28,11 @@ make -j4
 ```sh
 ${project_folder}/bin/kcg_compiler > log.txt 2>&1
 ```
+   
+调试：f5进入调式模式。配置文件在 .vscode/launch.json 注意配置选择   
+<p align = 'center'>
+<img src="./doc/image.png" width=50%>
+</p>
 
 2. lib模式   
 参数配置：
