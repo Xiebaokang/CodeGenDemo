@@ -9,18 +9,10 @@
 
 namespace KernelCodeGen
 {
-  class KernelCodeGenerator
-  {
+  class KernelCodeGenerator {
+    using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
   public:
-    KernelCodeGenerator(Target target_, const std::string& arch_) : builder(&context), target(target_), arch(arch_) {
-      initMLIRContext();
-      createModule();
-    }
-
-    KernelCodeGenerator() = delete;
-
-    void initMLIRContext()
-    {
+    KernelCodeGenerator(Target target_, const std::string& arch_) : target(target_), arch(arch_) {
       context.getOrLoadDialect<mlir::affine::AffineDialect>();
       context.getOrLoadDialect<mlir::memref::MemRefDialect>();
       context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -34,32 +26,17 @@ namespace KernelCodeGen
       mlir::registerAllPasses();
     }
 
-    void createModule()
-    {
-      module = mlir::ModuleOp::create(builder.getUnknownLoc());
-      builder.setInsertionPointToEnd(module.getBody());
+    KernelCodeGenerator() = delete;
+
+    template <typename OperatorType, typename... Args> 
+    mlir::ModuleOp create(Args &&...args) {
+      mlir::OpBuilder builder(&context);
+      mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
+      OperatorType::build(module, std::forward<Args>(args)...);
+      return module;
     }
 
-    template <typename OperatorType, typename... Args>
-    void create(Args &&...args)
-    {
-      OperatorType::build(module, builder, std::forward<Args>(args)...);
-    }
-
-    void dump(const std::string &info = "")
-    {
-      llvm::errs() << "----------------------------------------------------------\n";
-      llvm::errs() << "           " << info << "\n";
-      llvm::errs() << "----------------------------------------------------------\n";
-      module->dump();
-      if (mlir::failed(mlir::verify(module)))
-      {
-        module->emitError("module verification error");
-        assert(false);
-      }
-    }
-
-    std::vector<mlir::ModuleOp> optimize(std::map<std::string, std::vector<std::map<std::string, int>>> configs);
+    bool optimize(mlir::ModuleOp &mod, std::map<std::string, int> config);
 
     bool lowering(mlir::ModuleOp &mod);
 
@@ -67,9 +44,6 @@ namespace KernelCodeGen
 
   private:
     mlir::MLIRContext context;
-    mlir::OpBuilder builder;
-    mlir::ModuleOp module;
-    // const std::string platform;
     Target target;
     const std::string arch;
   };

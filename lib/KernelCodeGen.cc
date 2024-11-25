@@ -14,31 +14,18 @@ std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
 }
 
 
-std::vector<mlir::ModuleOp> KernelCodeGenerator::optimize(std::map<std::string, std::vector<std::map<std::string, int>>> configs) {
-  auto tempMod = mlir::dyn_cast<mlir::ModuleOp>(module->clone());
-  auto opNames = Analyzer::collectFuncNames(tempMod);
-  std::vector<mlir::ModuleOp> results;
-
-  for (auto opName: opNames) {
-    if (configs.count(opName) == 0) continue;
+bool KernelCodeGenerator::optimize(mlir::ModuleOp &mod, std::map<std::string, int> config) {
+  auto opNames = Analyzer::collectFuncNames(mod);
+  for (auto opName : opNames) {
     auto opt = createOptimizer(opName);
-    if (opt == nullptr) continue;
-
-    std::vector<mlir::ModuleOp> mods;
-    for (auto config: configs[opName]) {
-      auto mod = mlir::dyn_cast<mlir::ModuleOp>(tempMod->clone());
-      mlir::OpBuilder builder(mod);
-
-      if (!opt->applicable(mod)) break;   // collect matmul datas
-      opt->applyOptimzer(mod, builder, config);
-      mods.push_back(mod);
+    if (opt == nullptr) {
+      llvm::errs() << "Optimization failed: Create Optimizer Failed.\n";
+      return false;
     }
-
-    if (mods.size() != 0) tempMod = mods[0];   // 取个最好的，再优化下一个算子
-    results = mods;
+    if (!opt->applicable(mod)) return false;   // collect matmul datas
+    opt->applyOptimzer(mod, config);
+    return true;
   }
-
-  return results;
 }
 
 
@@ -69,27 +56,26 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
 
 bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
-  int indexBitWidth = INDEX_BIT_WIDTH;
   mlir::PassManager pm(&context);
   pm.addPass(createParallelToROCDLPass());                         // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addPass(mlir::createConvertSCFToCFPass());                    // scf -> cf
 
   ConvertControlFlowToLLVMPassOptions cfOptions;
-  cfOptions.indexBitwidth = 32;
+  cfOptions.indexBitwidth = INDEX_BIT_WIDTH;
   
   pm.addPass(mlir::createConvertControlFlowToLLVMPass(cfOptions));        // cf -> llvm
   // pm.addPass(createConvertArithIndexToI64Pass());                      // 自定义 将arith中的constantOp的result为index类型的Op全部转成result为i64的op
 
   ArithToLLVMConversionPassOptions arithOptions;
-  arithOptions.indexBitwidth = 32;
+  arithOptions.indexBitwidth = INDEX_BIT_WIDTH;
   pm.addPass(mlir::createArithToLLVMConversionPass(arithOptions));            // arith -> llvm
 
-  pm.addPass(createVectorToLLVMPass(/*indexBitwidth*/32));                    // 自定义 vector to llvm pass
+  pm.addPass(createVectorToLLVMPass(/*indexBitwidth*/INDEX_BIT_WIDTH));                    // 自定义 vector to llvm pass
   // pm.addPass(mlir::createConvertVectorToLLVMPass());                       // vector -> llvm
 
   FinalizeMemRefToLLVMConversionPassOptions memrefOptions;
-  memrefOptions.indexBitwidth = 32;                                           // 这个32会将malloc func的参数也定义为i32，以及将ptrtointOp的返回也是i32，llvm malloc func不支持i32
+  memrefOptions.indexBitwidth = INDEX_BIT_WIDTH;                                           // 这个32会将malloc func的参数也定义为i32，以及将ptrtointOp的返回也是i32，llvm malloc func不支持i32
   // memrefOptions.useAlignedAlloc = true;                                    // 这个如果不开启的话，且上为i32，则llir转换失败，解决使用pass - createMallocFuncOpArgTypeI32ToI64Pass
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(memrefOptions));  // memref -> llvm
 
@@ -98,7 +84,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createSymbolDCEPass());
 
   ConvertFuncToLLVMPassOptions funcOptions;                                 // passes.h.inc文件中有通过tablegen生成的pass base类型 以及createxxx()
-  funcOptions.indexBitwidth = 32;                                           // func loewring 到 llvm 时，其index转到llvm上是使用i32类型
+  funcOptions.indexBitwidth = INDEX_BIT_WIDTH;                                           // func loewring 到 llvm 时，其index转到llvm上是使用i32类型
   funcOptions.useBarePtrCallConv = true;                                    // 使用裸指针，而不使用结构体指针表示memref类型
   pm.addPass(mlir::createConvertFuncToLLVMPass(funcOptions));               // func -> llvm
   // pm.addPass(createEraseRedundantUnCCastPass());                         // 手动写的去除多余UnrealizedCast

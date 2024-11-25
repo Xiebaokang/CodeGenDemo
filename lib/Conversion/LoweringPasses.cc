@@ -374,7 +374,7 @@ struct SetShmSizeZeroPass : public PassWrapper<SetShmSizeZeroPass, OperationPass
   void runOnOperation() override {
     auto mod = getOperation();
     std::vector<mlir::LLVM::GlobalOp> globalOps = {};
-    mod.walk([&](mlir::LLVM::GlobalOp op){
+    mod.walk([&](mlir::LLVM::GlobalOp op) {
       auto type = op.getGlobalType();
       auto arrTy = mlir::dyn_cast<mlir::LLVM::LLVMArrayType>(type);
       auto newType = mlir::LLVM::LLVMArrayType::get(arrTy.getElementType(),0);
@@ -400,19 +400,28 @@ struct SetShmSizeZeroPass : public PassWrapper<SetShmSizeZeroPass, OperationPass
       op.erase();
       globalOps.push_back(newOp);
     });
-    assert(globalOps.size() == 1);
-    mod.walk([&](mlir::LLVM::AddressOfOp op){
-      auto operand_0 = op.getODSOperands(0);
-      auto builder = mlir::OpBuilder(op);
-      auto ptr = mlir::dyn_cast_if_present<mlir::LLVM::LLVMPointerType>(op.getRes().getType());
-      // auto ptr = op.getRes().dyn_cast<mlir::LLVM::LLVMPointerType>();
-      if(ptr.getAddressSpace() == (int)KernelCodeGen::MemorySpace::shared){
-          // static void build(::mlir::OpBuilder &odsBuilder, ::mlir::OperationState &odsState, GlobalOp global, ArrayRef<NamedAttribute> attrs = {});
-        mlir::Value newOp = builder.create<mlir::LLVM::AddressOfOp>(builder.getUnknownLoc(),globalOps[0]);
-        op.replaceAllUsesWith(newOp);
-        op.erase();
-      }
-    });
+    if (globalOps.size()) {
+      SmallVector<Operation*> gtps;
+      mod.walk([&](mlir::LLVM::AddressOfOp op) {
+        auto ptr = mlir::dyn_cast_if_present<mlir::LLVM::LLVMPointerType>(op.getRes().getType());
+        if(ptr.getAddressSpace() == (int)KernelCodeGen::MemorySpace::shared) {
+          // auto parentOp = mlir::dyn_cast<LLVM::LLVMFuncOp>(op->getParentOp());
+          // if (!parentOp) assert(false);
+          // auto dataflowTypeAttr = mlir::dyn_cast<mlir::StringAttr>(parentOp->getAttr("func.dataflow.type"));
+          // std::string type_ = dataflowTypeAttr.getValue().str();
+          for (auto user : op.getResult().getUsers()) {
+            if (auto getptr = mlir::dyn_cast<LLVM::GEPOp>(user)) {
+          //     auto builder = mlir::OpBuilder(getptr);
+          //     auto type = LLVM::LLVMPointerType::get(getDType(builder, type_), ptr.getAddressSpace());
+          //     auto castOp = builder.create<LLVM::BitcastOp>(getptr.getLoc(), type, op.getResult());
+              getptr.replaceAllUsesWith(op.getResult());
+              gtps.push_back(user);
+            }
+          }
+        }
+      });
+      for (auto gtp : gtps) gtp->erase();
+    }
   }
 };
 
@@ -447,7 +456,7 @@ struct ReplacePtrtointAndCallOp : public OpRewritePattern<LLVM::PtrToIntOp> {
   LLVM::LLVMFuncOp newFuncOp;
 };
 
-// 替换malloc(i32) -> malloc(i64) / ptrtointOp & callOp 也替换成符合i64的操作
+// ***弃用*** 替换malloc(i32) -> malloc(i64) / ptrtointOp & callOp 也替换成符合i64的操作
 struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI32ToI64Pass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(MallocFuncOpArgTypeI32ToI64Pass)
 
@@ -521,7 +530,7 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
 
 };
 
-
+//  ***弃用*** 没有添加lib仍然可编译
 struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AddExternalLibPass)
 
@@ -597,7 +606,6 @@ struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass
 
 
 // replace alloc<shared> to getGlobalOp
-
 struct ReplaceAllocOpToGetGlobalOp : public PassWrapper<ReplaceAllocOpToGetGlobalOp, OperationPass<ModuleOp>> {
    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ReplaceAllocOpToGetGlobalOp)
    ReplaceAllocOpToGetGlobalOp() = default;
@@ -761,11 +769,11 @@ std::unique_ptr<OperationPass<ModuleOp>> createVectorToLLVMPass(unsigned indexBi
 std::unique_ptr<OperationPass<ModuleOp>> createGlobalShmSetZeroPass() {
   return std::make_unique<SetShmSizeZeroPass>();
 }
-
+// ***弃用***
 std::unique_ptr<OperationPass<ModuleOp>> createMallocFuncOpArgTypeI32ToI64Pass() {
   return std::make_unique<MallocFuncOpArgTypeI32ToI64Pass>();
 }
-
+// ***弃用***
 std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::string& libsPath, const std::string& gfx_arch) {
   return std::make_unique<AddExternalLibPass>(libsPath, gfx_arch);
 }

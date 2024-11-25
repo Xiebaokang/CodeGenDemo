@@ -11,6 +11,8 @@
 
 using namespace KernelCodeGen;
 
+using Config = std::map<std::string, int>;
+
 enum class MdlOperatorType : int{
   Matmul = 1,
   Convolution = 2,
@@ -48,40 +50,35 @@ std::ostream& operator<<(std::ostream& os, UserTilingInputs arg){
   return os;
 }
 
-std::string _compile(const UserTilingInputs& cfg ) {
-  using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
+std::map<Config, std::string> testConfigs(std::vector<Config> configs) {
+  std::map<Config, std::string> result;
   KernelCodeGenerator generator(Target::ROCm, "906");
-
-  Config configs = {
-    // {"Matmul", {
-    //     {{"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 16}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 4}, {"VECTORIZE_WIDTH", 4}, {"WARP_SIZE", 64}, 
-    //     {"BLOCK_LAYOUT_M", 4}, {"BLOCK_LAYOUT_N", 1}, {"WARP_LAYOUT_M", 4}, {"WARP_LAYOUT_N", 16}}
-    //     // {{"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 16}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 4}, {"VECTORIZE_WIDTH", 4}, {"WARP_SIZE", 64}}
-    //   }}
-    {"Matmul", {
-        {
-          {"BLOCK_SIZE_M", cfg.m_BLOCK_SIZE_M}, {"BLOCK_SIZE_N", cfg.m_BLOCK_SIZE_N},
-          {"BLOCK_SIZE_K", cfg.m_BLOCK_SIZE_K}, 
-          {"THREAD_SIZE_M", cfg.m_THREAD_SIZE_M}, {"THREAD_SIZE_N", cfg.m_THREAD_SIZE_N}, 
-          {"VECTORIZE_WIDTH", cfg.m_VECTORIZE_WIDTH}, {"WARP_SIZE", cfg.m_WARP_SIZE}, 
-          {"BLOCK_LAYOUT_M", cfg.m_BLOCK_LAYOUT_M}, {"BLOCK_LAYOUT_N", cfg.m_BLOCK_LAYOUT_N}, 
-          {"WARP_LAYOUT_M", cfg.m_WARP_LAYOUT_M}, {"WARP_LAYOUT_N", cfg.m_WARP_LAYOUT_N}
-        }
-        // {{"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 16}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 4}, {"VECTORIZE_WIDTH", 4}, {"WARP_SIZE", 64}}
-      }}
-  };
-
-  generator.create<Matmul>(std::vector<int64_t>{1024, 1024, 1024});
-  auto mods = generator.optimize(configs);
-  std::string hsacoPath = "";
-  for (mlir::ModuleOp& mod: mods) {
-    auto res = generator.lowering(mod);
-    std::cout << "==== lowering status: " << (res?"SUCCESS":"FAILED") << "\n";
-    hsacoPath = generator.translate(mod);
+  auto kernel = generator.create<Matmul>(std::vector<int64_t>{1024, 1024, 1024});
+  for (auto config : configs) {
+    auto res1 = generator.optimize(kernel, config);
+    std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
+    auto res2 = generator.lowering(kernel);
+    std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
+    std::string hsacoPath = generator.translate(kernel);
     std::cout << "==== translate res :" << "\n";
     std::cout << hsacoPath << "\n";
+    result[config] = hsacoPath;
   }
-  return hsacoPath;
+  return result;
+}
+
+std::string _compile(const UserTilingInputs& cfg) {
+  std::vector<Config> configs = {
+    {
+      {"BLOCK_SIZE_M", cfg.m_BLOCK_SIZE_M}, {"BLOCK_SIZE_N", cfg.m_BLOCK_SIZE_N}, {"BLOCK_SIZE_K", cfg.m_BLOCK_SIZE_K}, 
+      {"THREAD_SIZE_M", cfg.m_THREAD_SIZE_M}, {"THREAD_SIZE_N", cfg.m_THREAD_SIZE_N}, 
+      {"VECTORIZE_WIDTH", cfg.m_VECTORIZE_WIDTH}, {"WARP_SIZE", cfg.m_WARP_SIZE}, 
+      {"BLOCK_LAYOUT_M", cfg.m_BLOCK_LAYOUT_M}, {"BLOCK_LAYOUT_N", cfg.m_BLOCK_LAYOUT_N}, 
+      {"WARP_LAYOUT_M", cfg.m_WARP_LAYOUT_M}, {"WARP_LAYOUT_N", cfg.m_WARP_LAYOUT_N}
+    }
+  };
+  auto result = testConfigs(configs);
+  return result[configs[0]];
 }
 
 #ifdef COMPILE_AS_PYMODULE
@@ -135,19 +132,20 @@ PyMODINIT_FUNC PyInit_KCGCompiler(void) {
 #else
 
 int main(){
-  UserTilingInputs data;
-  data.m_BLOCK_SIZE_M= 64;
-  data.m_BLOCK_SIZE_N=64;
-  data.m_BLOCK_SIZE_K=16;
-  data.m_THREAD_SIZE_M= 4;
-  data.m_THREAD_SIZE_N= 4;
-  data.m_VECTORIZE_WIDTH= 4;
-  data.m_WARP_SIZE= 64 ;
-  data.m_BLOCK_LAYOUT_M= 4;
-  data.m_BLOCK_LAYOUT_N= 1;
-  data.m_WARP_LAYOUT_M= 4;
-  data.m_WARP_LAYOUT_N= 16;
-  _compile(data);
+
+  std::vector<Config> configs = {
+    {
+      {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 16}, 
+      {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 4}, {"VECTORIZE_WIDTH", 4}, {"WARP_SIZE", 64}, 
+      {"BLOCK_LAYOUT_M", 4}, {"BLOCK_LAYOUT_N", 1}, {"WARP_LAYOUT_M", 4}, {"WARP_LAYOUT_N", 16}
+    },
+    // {
+    //   {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 32}, 
+    //   {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 4}, {"VECTORIZE_WIDTH", 4}, {"WARP_SIZE", 64}, 
+    //   {"BLOCK_LAYOUT_M", 4}, {"BLOCK_LAYOUT_N", 1}, {"WARP_LAYOUT_M", 4}, {"WARP_LAYOUT_N", 16}
+    // }
+  };
+  auto result = testConfigs(configs);
   return 0;
 }
 

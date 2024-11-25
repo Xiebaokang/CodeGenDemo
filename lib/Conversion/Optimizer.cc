@@ -6,12 +6,16 @@ namespace KernelCodeGen {
 bool MatmulOptimizer::applicable(mlir::ModuleOp& module) {
   clear();
   auto&& matmulFuncs = Analyzer::collectFunctions(module, "Matmul");
-  bool res = matmulFuncs.size() != 0 ? true : false;
+  if (!matmulFuncs.size()) {
+    llvm::errs() << "Optimization failed: No find Matmul funcOp.\n";
+    return false;
+  }
 
   for (auto& matmulFunc : matmulFuncs) {
     if (matmuls.count(matmulFunc) != 0 || matmulLoops.count(matmulFunc) != 0
       || matmulBuffers.count(matmulFunc) != 0) {
-      llvm::errs() << "Duplicated Matmul in module\n";
+      llvm::errs() << "Optimization failed: Duplicated Matmul in module\n";
+      return false;
     }
 
     matmuls.insert(matmulFunc);
@@ -25,26 +29,21 @@ bool MatmulOptimizer::applicable(mlir::ModuleOp& module) {
     ABC.C = funcArgs[2];
     matmulBuffers[matmulFunc] = ABC;
   }
-  return res;
+  return true;
 }
+
 
 int64_t smAReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutN, int64_t warpLayoutM) {
   int64_t warpNum = blockDim / warpSize;
-  // int64_t laneNum = warpSize;
-  //warp orgnize: 2 x 4
-  // std::vector<int64_t> warpOrg {2, 4};
-  // std::vector<int64_t> threadOrg {8, 4};
   return (warpNum / blockLayoutN) * warpLayoutM;
 }
 
+
 int64_t smBReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutM, int64_t warpLayoutN) {
   int64_t warpNum = blockDim / warpSize;
-  // int64_t laneNum = warpSize;
-  //warp orgnize: 2 x 4
-  // std::vector<int64_t> warpOrg {2, 4};
-  // std::vector<int64_t> threadOrg {8, 4};
   return (warpNum / blockLayoutM) * warpLayoutN;
 }
+
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
   auto dim0 = builder.getAffineDimExpr(0);
@@ -160,7 +159,9 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   }
 }
 
-void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, mlir::OpBuilder& builder, std::map<std::string, int> config) {
+
+void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) {
+  mlir::OpBuilder builder(module);
   for (auto& matmul : matmuls) {
     matmul->setAttr(std::string("func.state"), builder.getStringAttr("gpu"));
     auto loops = matmulLoops[matmul];

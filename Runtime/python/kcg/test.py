@@ -15,7 +15,7 @@ from kcg.KCGCompiler import KCGCompiler
 
 class kcgData:
     hsacoPath='/tmp/kcg_kernel-6e4089/kcg_kernel-6e4089.hsaco'
-    funName = 'Matmul_m1024n1024k1024_randomString'
+    funName = 'Matmul_m1024n1024k1024'
 
 class kcgData_1:
     hsacoPath='/tmp/kcg_kernel-07b4bb/kcg_kernel-07b4bb.hsaco'

@@ -12,7 +12,7 @@ namespace KernelCodeGen {
 
 struct Optimizer {
   virtual bool applicable(mlir::ModuleOp& module) = 0;
-  virtual void applyOptimzer(mlir::ModuleOp& module, mlir::OpBuilder& builder, std::map<std::string, int> config) = 0;
+  virtual void applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) = 0;
 
   bool operator==(const Optimizer& other) {
     return name == other.name;
@@ -28,7 +28,7 @@ struct MatmulOptimizer : Optimizer {
   }
 
   virtual bool applicable(mlir::ModuleOp& module) override;
-  virtual void applyOptimzer(mlir::ModuleOp& module, mlir::OpBuilder& builder, std::map<std::string, int> config) override;
+  virtual void applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) override;
 
   mlir::AffineMap getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config);
 
