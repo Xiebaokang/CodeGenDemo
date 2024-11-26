@@ -6,3 +6,4 @@ ceshiData/
 log
 *.log
 *.txt
+*.amdgcn
