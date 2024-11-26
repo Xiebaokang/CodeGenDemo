@@ -1,6 +1,6 @@
 set(outName "kcg_compiler")
 include_directories("/home/pangyunfei/anaconda3/envs/triton_rocm/include/python3.8")
-option(COMPILE_AS_PYMODULE "kcg_compiler output as a lib" ON)
+
 if(COMPILE_AS_PYMODULE)
     add_definitions(-DCOMPILE_AS_PYMODULE)
     message("---- compile kcg_compiler as Lib ----")

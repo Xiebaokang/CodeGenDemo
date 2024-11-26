@@ -29,4 +29,6 @@ std::unique_ptr<OperationPass<ModuleOp>> createAddExternalLibPass(const std::str
 std::unique_ptr<OperationPass<ModuleOp>> ReplaceAllocToGetglobalPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createCombineMemrefPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createFlattenMemrefPass();
 }

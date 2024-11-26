@@ -2,7 +2,7 @@
 ###################################################################
 cmake_minimum_required(VERSION 3.15.0)
 project(KernelCodeGen LANGUAGES CXX C)    # delete CUDA
-
+option(COMPILE_AS_PYMODULE "kcg_compiler output as a lib" ON)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 

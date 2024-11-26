@@ -4,3 +4,5 @@ Runtime/python/kcg/*/__pycache__/
 Runtime/python/kcg/__pycache__/
 ceshiData/
 log
+*.log
+*.txt

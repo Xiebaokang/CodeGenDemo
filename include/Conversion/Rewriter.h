@@ -56,16 +56,27 @@ struct Rewriter {
   static mlir::Value alloc_buffer(ParentOpType father, MemorySpace ms, 
                           const std::vector<int64_t> shape_, mlir::Type dtype) {
     llvm::ArrayRef<int64_t> shape (shape_);
+    int64_t flatSize = 1;
+    for(auto dim : shape){
+      flatSize *= dim;
+    }
+    llvm::ArrayRef<int64_t> flatShape {1,flatSize};
     mlir::MemRefType tensorShape = mlir::MemRefType::get(
       shape, dtype, {}, static_cast<int>(ms));
     
     mlir::OpBuilder builder(father->getContext());
     builder.setInsertionPointToStart(father.getBody());
     if(ms == MemorySpace::local){
-      return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+      // register alloc 
+      auto op = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape);
+      op.setAlignment(16);
+      return op->getResult(0);
     }
     else{
-      return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape)->getResult(0);
+      // shm alloc
+      auto op = builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape);
+      op.setAlignment(16);
+      return op->getResult(0);
     }
   }
 
