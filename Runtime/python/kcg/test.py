@@ -12,12 +12,16 @@ from kcg.Operators import matmul
 import sys
 from kcg.KCGCompiler import KCGCompiler
 
-m_len=1024; n_len=1024; k_len=1024
+############### User config ###############
+m_len=2048
+n_len=2048
+k_len=2048
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
-    EnumKernelDType.float32,
-    EnumKernelDType.float32,
-    EnumKernelDType.float32)
+    EnumKernelDType.float32 ,
+    EnumKernelDType.float32 ,
+    EnumKernelDType.float32
+    )
 
 kp_matmul.BLOCK_SIZE_M= 64
 kp_matmul.BLOCK_SIZE_N=64
@@ -31,35 +35,38 @@ kp_matmul.BLOCK_LAYOUT_N= 1
 kp_matmul.WARP_LAYOUT_M= 4
 kp_matmul.WARP_LAYOUT_N= 16
 
-kernelCompiler = KCGCompiler()
-hsacoPath,kernelName = kernelCompiler.compileKernel(kp_matmul)
 
-print("========= hsacoPath = ",hsacoPath)
-print("========= kernelName = ",kernelName)
-# funName = 'Matmul_m1024n1024k1024'
+def test_correctness(kpm : KernelArgMatmul):
+    kernelCompiler = KCGCompiler()
+    hsacoPath,kernelName = kernelCompiler.compileKernel(kpm)
 
-inConfig = UserInputs(hsacoPath,kernelName,kp_matmul)
-inConfig.operatorKind = EnumOperator.Matmul
-packedKernel = CompiledKernelFactory.getKernel(inConfig)
+    print("========= hsacoPath = ",hsacoPath)
+    print("========= kernelName = ",kernelName)
+    # funName = 'Matmul_m1024n1024k1024'
 
-a = torch.rand(m_len,k_len,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
-b = torch.rand(k_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
-c = torch.empty(m_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
-d = torch.empty(m_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
-M, K = a.shape
-K, N = b.shape
-packedKernel.run(a,b,c)
+    inConfig = UserInputs(hsacoPath,kernelName,kpm)
+    inConfig.operatorKind = EnumOperator.Matmul
+    packedKernel = CompiledKernelFactory.getKernel(inConfig)
 
-# o.run(a,b,c,
-#       M,N,K, a.stride(0), a.stride(1),  
-#         b.stride(0), b.stride(1),  
-#         c.stride(0), c.stride(1),  
-#     )
-print(c)
-d = torch.matmul(a,b)
-if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
-    print('test correct!')
-else:
-    print('test fail')
-    
-    # hipprof --pmc python ./test.py 
+    a = torch.rand(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
+    b = torch.rand(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
+    c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
+    d = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
+    M, K = a.shape
+    K, N = b.shape
+    packedKernel.run(a,b,c)
+    # o.run(a,b,c,
+    #       M,N,K, a.stride(0), a.stride(1),  
+    #         b.stride(0), b.stride(1),  
+    #         c.stride(0), c.stride(1),  
+    #     )
+    print(c)
+    d = torch.matmul(a,b)
+    if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
+        print('test correct!')
+    else:
+        print('test fail')
+        
+        # hipprof --pmc python ./test.py 
+
+test_correctness(kp_matmul)

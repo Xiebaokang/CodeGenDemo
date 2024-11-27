@@ -159,10 +159,10 @@ class EnumKernelDType(IntEnum):
     float32 = 4
     float64 = 8
     float128 = 16
-    int8 = 11
-    int16 = 12
-    int32 = 14
-    int64 = 18
+    int8 = 31
+    int16 = 32
+    int32 = 34
+    int64 = 38
     def __str__(self):
         return f'{self.name}'
 
@@ -175,7 +175,7 @@ def ToTorchType (t : EnumKernelDType) -> torch.dtype:
         return torch.float16
 
 def sizeof(t : EnumKernelDType) : # bytes
-    return int(t) % 10
+    return int(t) % 30
 
 def get_kernel_name(src: str, pattern: str) -> str:
     '''

@@ -245,149 +245,6 @@ PyMODINIT_FUNC PyInit___kcg_launcher(void) {{
     return src
 
 
-# def get_amdgcn_bitcode_paths(gfx_arch: str):
-#     # print("get_amdgcn_bitcode_paths")
-#     gpu_arch_agnostic_bitcode_libraries = ["opencl.bc",
-#                                            "ocml.bc",
-#                                            "ockl.bc",
-#                                            "oclc_finite_only_off.bc",
-#                                            "oclc_daz_opt_on.bc",
-#                                            "oclc_correctly_rounded_sqrt_on.bc",
-#                                            "oclc_unsafe_math_off.bc",
-#                                            "oclc_wavefrontsize64_on.bc",
-#                                            "oclc_abi_version_400.bc", ]
-
-#     gfx_arch_id = re.search('gfx(\\w+)', gfx_arch).group(1).strip()
-
-#     gpu_arch_specific_bitcode_library = 'oclc_isa_version_' + gfx_arch_id + ".bc"
-#     current_dir = Path(__file__)
-#     bitcode_path_dir = os.path.join(current_dir.parent.resolve(), "lib/bitcode/")
-
-#     amdgcn_bitcode_paths = {}
-#     i = 0
-#     for bc_lib in gpu_arch_agnostic_bitcode_libraries:
-#         bc_path = bitcode_path_dir + bc_lib
-#         if os.path.exists(bc_path):
-#             amdgcn_bitcode_paths['library_' + str(i)] = bc_path
-#             i += 1
-#     bc_gfx_path = bitcode_path_dir + gpu_arch_specific_bitcode_library
-#     if os.path.exists(bc_gfx_path):
-#         amdgcn_bitcode_paths['library_' + str(i)] = bc_gfx_path
-
-#     # print(f"amdgcn_bitcode_paths: {amdgcn_bitcode_paths}")
-#     return amdgcn_bitcode_paths
-
-# def get_arch_name() -> str:
-#     arch_info = _triton.get_arch_info()
-#     gfx_arch_details = re.search('amd.*', arch_info).group(0).strip().split('--')
-#     arch_name_features = gfx_arch_details[1].split(':')
-#     return arch_name_features[0]
-
-# def gpu_matrix_core_version() -> int:
-#     """ Determine matrix core type available on current GPU.
-
-#         0 means no tensor cores are available
-#         1 corresponds to MFMA in CDNA 1 architecture
-#         2 corresponds to MFMA in CDNA 2 architecture
-#         3 corresponds to MFMA in CDNA 3 architecture
-#     """
-
-#     arch_info = _triton.get_arch_info()
-#     gfx_arch_details = re.search('amd.*', arch_info)
-#     if gfx_arch_details is None:
-#         return 0
-#     gfx_arch_details = gfx_arch_details.group(0).strip().split('--')
-#     gpu_name = gfx_arch_details[1].split(':')[0]
-#     if gpu_name in ['gfx908']:
-#         return 1
-#     if gpu_name in ['gfx90a']:
-#         return 2
-#     if gpu_name in ['gfx940', 'gfx941', 'gfx942']:
-#         return 3
-#     return 0
-
-# def get_amdgpu_arch_fulldetails():
-#     """
-#     get the amdgpu full ISA details for compiling:
-#     i.e., arch_triple: amdgcn-amd-amdhsa; arch_name: gfx906; arch_features: sramecc+:xnack-
-#     """
-#     try:
-#         # TODO: package rocm.cc with Triton
-#         arch_info = _triton.get_arch_info()
-#         gfx_arch_details = re.search('amd.*', arch_info).group(0).strip().split('--')
-#         arch_triple = gfx_arch_details[0]
-#         arch_name_features = gfx_arch_details[1].split(':')
-#         arch_name = arch_name_features[0]
-#         arch_features = ""
-
-#         # overwrite if provided by user
-#         gfx_arch = os.environ.get('MI_GPU_ARCH', arch_name)
-#         if gfx_arch is None:
-#             raise RuntimeError('gfx_arch is None (not specified)')
-#         mat_core_ver = gpu_matrix_core_version()
-#         capability = gpu_matrix_core_version() * 100
-#         warp_size = _triton.get_warp_size()
-
-#         return {"gfx_triple": arch_triple, "gfx_arch": gfx_arch, "gfx_features": arch_features,\
-#                  "capability": capability, "matrix_core_version": mat_core_ver, "warp_size": warp_size}
-#     except BaseException as e:
-#         print("Error: Attempting to get amgpu ISA Details {}".format(e))
-#         return None
-
-
-# def get_kernel_name(src: str, pattern: str) -> str:
-#     # print("get_kernel_name")
-#     '''
-#     Get kernel name from PTX code.
-#     This Kernel name is required when launching the kernel.
-#     '''
-#     # There is a name mangling in PTX codegen, so the original kernel names in Triton IR are not available in PTX/cubin.
-#     assert src
-#     for line in src.split('\n'):
-#         line = line.strip()
-#         if line.startswith(pattern):
-#             return line.split()[-1]
-
-
-# def get_arch_details(arch: dict):
-#     # get arch info
-#     gfx_arch = os.environ.get('MI_GPU_ARCH', arch["gfx_arch"])
-#     gfx_triple = arch["gfx_triple"]
-#     gfx_features = arch["gfx_features"]
-#     if gfx_arch is None:
-#         raise RuntimeError('gfx_arch is None (not specified)')
-
-#     return gfx_arch, gfx_triple, gfx_features
-
-
-# def update_extern_libs(extern_libs: dict, gfx_arch: str):
-#     # append extern_libs
-#     extern_libs.update(get_amdgcn_bitcode_paths(gfx_arch))
-#     for key in list(extern_libs):
-#         if extern_libs[key] == '' or extern_libs[key] is None:
-#             extern_libs.pop(key)
-
-#     # check extern libs
-#     if extern_libs:
-#         for name, path in extern_libs.items():
-#             if len(name) == 0 or len(path) == 0:
-#                 raise RuntimeWarning(f"extern_lib has empty value, {name}: {path}")
-
-#     names = list(extern_libs.keys())
-#     paths = list(extern_libs.values())
-#     return names, paths
-
-class MockData :
-    def __init__(self):
-        self.num_ctas = 1
-        self.clusterDims = [1,1,1]
-        self.shared = 16896
-        self.enterHookFunc = None
-        self.exitHookFunc = None
-        # self.shared = 40000
-        # M,N,K : M/block
-
-
 class HIPLauncher :
     def __init__(self, kernelBinaryPath,kernelFuncName,shmSize,signature:dict,gridDims:list,blockDims:list,device=DeviceInfo.get_current_device()):
         self.m_cWrapper = None
@@ -417,23 +274,26 @@ class HIPLauncher :
         return self.m_cWrapper
 
     def launchKernel(self,*args,**kwargs):
-        m = MockData()
         wrapper = self._getWrapper()
         stream = DeviceInfo.get_cuda_stream()
-
-
         if wrapper is None:
             raise Exception("kcg: _getWrapper failed")
         gridDims = self.m_kernelLib.m_gridDims
         blockDims = self.m_kernelLib.m_blockDims
+        clusterDims = [1,1,1]  # Grid > Cluster > CTA(=Block=WorkGroup) > Wavefront(=Warp) > workitem(=thread) 
+        enterHookFunc = None
+        exitHookFunc = None
+        numCTAs = gridDims[0]*gridDims[1]*gridDims[2]
+        
         wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
                 # m.num_ctas,
-                gridDims[0]*gridDims[1]*gridDims[2],
-                m.clusterDims[0],m.clusterDims[1],m.clusterDims[2],
-                m.shared,stream,
+                numCTAs,
+                clusterDims[0],clusterDims[1],clusterDims[2],
+                self.m_kernelLib.m_shmSize,
+                stream,
                 self.m_kernelLib.m_kernelInfo.m_function, 
-                m.enterHookFunc,
-                m.exitHookFunc,
+                enterHookFunc,
+                exitHookFunc,
                 self,*args )
         # self.c_wrapper(grid[0], grid[1], grid[2], self.num_warps, self.num_ctas, self.clusterDims[0],
         #     self.clusterDims[1], self.clusterDims[2], self.shared, stream, self.cu_function,

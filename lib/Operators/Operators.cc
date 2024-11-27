@@ -15,6 +15,7 @@ mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
   if(dtype == "int16") return builder.getIntegerType(16);
   if(dtype == "index") return builder.getIndexType();
   if(dtype == "bool") return builder.getIntegerType(1);
+  assert(false && "getDType:: Unsupported Type ");
   return nullptr;
 }
 
