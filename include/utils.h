@@ -156,6 +156,19 @@ struct NVVMMetadata {
 };
 
 
+enum class KcgDtype : int {
+  float8 = 1,
+  float16 = 2,
+  float32 = 4,
+  float64 = 8,
+  float128 = 16,
+  int8 = 11,
+  int16 = 12,
+  int32 = 14,
+  int64 = 18
+};
+
+
 #define AttrKernelFunc "nvvm.kernel"
 #define AttrVisibility "sym_visibility" 
 #define AttrExternLib "kcg.externLibs"
@@ -167,6 +180,26 @@ std::string getenv(const char *name);
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype);
 
 std::string typeToStr(mlir::Type type);
+
+std::string KcgDtypeToStr(KcgDtype type);
+
+#define  KEY_BLOCK_SIZE_M         "BLOCK_SIZE_M"
+#define  KEY_BLOCK_SIZE_N         "BLOCK_SIZE_N"
+#define  KEY_BLOCK_SIZE_K         "BLOCK_SIZE_K"
+#define  KEY_THREAD_SIZE_M        "THREAD_SIZE_M"
+#define  KEY_THREAD_SIZE_N        "THREAD_SIZE_N"
+#define  KEY_VECTORIZE_WIDTH      "VECTORIZE_WIDTH"
+#define  KEY_WARP_SIZE            "WARP_SIZE"
+#define  KEY_BLOCK_LAYOUT_M       "BLOCK_LAYOUT_M"
+#define  KEY_BLOCK_LAYOUT_N       "BLOCK_LAYOUT_N"
+#define  KEY_WARP_LAYOUT_M        "WARP_LAYOUT_M"
+#define  KEY_WARP_LAYOUT_N        "WARP_LAYOUT_N"
+#define  KEY_DTYPE_A              "DATATYPE_A"
+#define  KEY_DTYPE_B              "DATATYPE_B"
+#define  KEY_DTYPE_C              "DATATYPE_C"
+#define  KEY_M                    "M_SIZE"
+#define  KEY_N                    "N_SIZE"
+#define  KEY_K                    "K_SIZE"
 
 }
 

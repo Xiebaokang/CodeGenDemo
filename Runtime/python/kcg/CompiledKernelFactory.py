@@ -11,58 +11,54 @@ class EnumOperator(Enum):
     def __str__(self):
         return f'{self.name}'
 
-class TilingScheme :
-    def __init__(self):
-        self.BLOCK_SIZE_M= 64
-        self.BLOCK_SIZE_N=64
-        self.BLOCK_SIZE_K=16
-        self.THREAD_SIZE_M= 4
-        self.THREAD_SIZE_N= 4
-        self.VECTORIZE_WIDTH= 4
-        self.WARP_SIZE= 64 
-        self.BLOCK_LAYOUT_M= 4
-        self.BLOCK_LAYOUT_N= 1
-        self.WARP_LAYOUT_M= 4
-        self.WARP_LAYOUT_N= 16
+
         
         # 1024/ self.BLOCK_SIZE_M, 1024/ self.BLOCK_SIZE_N 
 
 class UserInputs:
-    def __init__(self,hsaco_path:str,kernel_func_name:str,tileScheme : TilingScheme):
-        # 自定义dtype的代表含义。如：matmul使用0、1分别代表A和B的元素类型
-        self.dtype_0 = torch.float32
-        self.dtype_1 = torch.float32
-        self.dtype_2 = torch.float32
-        self.dtype_3 = torch.float32
-        self.dtype_4 = torch.float32
-        self.operatorKind = EnumOperator.Invalid
+    def __init__(self,hsaco_path:str,kernel_func_name:str,kernelParam : KernelArgMatmul):
+        self.operatorKind = EnumOperator.Matmul
         self.hsacoPath = hsaco_path
         self.kernelFuncName = kernel_func_name
-        self.tiling = tileScheme
+        self.kernelParam = kernelParam
 
-    def gridDims(self,m,n,k):
-        return [ m // self.tiling.BLOCK_SIZE_M,n // self.tiling.BLOCK_SIZE_N,1 ]
+    def gridDims(self):
+        m = self.kernelParam.M
+        n = self.kernelParam.N
+        return [ m // self.kernelParam.BLOCK_SIZE_M,n // self.kernelParam.BLOCK_SIZE_N,1 ]
     
     def blockDims(self):
-        return [self.tiling.BLOCK_LAYOUT_M * self.tiling.WARP_LAYOUT_M,
-                self.tiling.BLOCK_LAYOUT_N * self.tiling.WARP_LAYOUT_N, 1 ]
+        return [self.kernelParam.BLOCK_LAYOUT_M * self.kernelParam.WARP_LAYOUT_M,
+                self.kernelParam.BLOCK_LAYOUT_N * self.kernelParam.WARP_LAYOUT_N, 1 ]
         
-    def sharedMem(self,m,n,k):
-        return 2*(m+n)*k*4
+    def sharedMem(self):
+        # 假设 ABC类型相同
+        kp = self.kernelParam
+        sizeA = 2*kp.BLOCK_SIZE_M*kp.BLOCK_SIZE_K*sizeof(kp.dtype('A'))
+        sizeB = 2*kp.BLOCK_SIZE_N*kp.BLOCK_SIZE_K*sizeof(kp.dtype('B'))
+        return sizeA + sizeB
+    
+    def numCTA(self) : 
+        ret = 1
+        m = self.kernelParam.M
+        n = self.kernelParam.N
+        k = self.kernelParam.K
+        for dim in self.gridDims(m,n,k):
+            ret *= dim
+        return ret
     
 # 用户输入：hsacopath，kernel名字(通过amdgcn获取)，
 class CompiledKernelFactory :
     @staticmethod
     def getKernel(info : UserInputs) -> CompiledKernel:
         if info.operatorKind==EnumOperator.Matmul :
-            signature = getMatmulSignature(info.dtype_0,info.dtype_1)
-            m,n,k = 1024,1024,1024
+            signature = getMatmulSignature(info.kernelParam.dtypeTorch('A'),info.kernelParam.dtypeTorch('B'))
             return CompiledKernel(
                 info.hsacoPath,
                 info.kernelFuncName,
-                info.sharedMem(m,n,k),
+                info.sharedMem(),
                 signature,
-                info.gridDims(m,n,k),
+                info.gridDims(),
                 info.blockDims()
             )
         if info.operatorKind==EnumOperator.Convolution :

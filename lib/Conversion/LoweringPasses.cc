@@ -648,7 +648,7 @@ struct CombineMemrefPass : public PassWrapper<CombineMemrefPass, OperationPass<M
     for (Operation &op : module.getBody()->getOperations()) {
       if (auto funcOp = mlir::dyn_cast<func::FuncOp>(&op)) {
         combineAllocOrAllocaOp<memref::AllocOp>(funcOp);
-        // combineAllocOrAllocaOp<memref::AllocaOp>(funcOp);
+        combineAllocOrAllocaOp<memref::AllocaOp>(funcOp);
       }
     }
   }
@@ -743,7 +743,7 @@ struct CombineMemrefPass : public PassWrapper<CombineMemrefPass, OperationPass<M
   }
 };
 
-// 将memref ，展平 并设置align 16（4*sizeof float）
+// *** Unused *** 将memref ，展平 并设置align 16（4*sizeof float）。结果目前存在错误，C变成对称阵（C_ij==C_ji）
 struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FlattenMemrefPass)
 
@@ -771,7 +771,7 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
       expr = expr + oldExprs[i] * num;
     }
     expr = startIndex + expr;
-    auto map = AffineMap::get(oldAffineMap.getNumDims(), 0, llvm::ArrayRef<mlir::AffineExpr>({expr}), context);
+    auto map = AffineMap::get(oldAffineMap.getNumDims(), oldAffineMap.getNumSymbols(), llvm::ArrayRef<mlir::AffineExpr>({expr}), context);
     return map;
   }
 
@@ -788,49 +788,47 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
       auto b = mlir::OpBuilder(op);
       auto newType = MemRefType::get({len}, resType.getElementType(), {}, resType.getMemorySpaceAsInt());
       auto newAllocOp = b.create<AllocOrAllocaOp>(op.getLoc(), newType);
-      // newAllocOp.setAlignment(16);
-      
-      SmallVector<Operation *> users;
-      for (auto user : op.getResult().getUsers()) {
-        users.push_back(user);
-      }
-      auto t = mlir::dyn_cast<MemRefType>(resType);
-      auto shapes = t.getShape();
+      newAllocOp.setAlignment(16);
+      op.getResult().replaceAllUsesWith(newAllocOp.getResult());
+      SmallVector<Operation *> opToDelete {};
+
       // 替换 user 位置的op
-      for (auto user : users) {
+      for (auto user : newAllocOp.getResult().getUsers()) {
         if (auto loadOp = mlir::dyn_cast<affine::AffineLoadOp>(user)) {
-          auto map = moreDimToOneDimMap(loadOp, 0, shapes, loadOp->getContext());
-          b.setInsertionPointAfter(loadOp);
-          auto newLoadOp = b.create<affine::AffineLoadOp>(loadOp.getLoc(), newAllocOp.getResult(), map, loadOp.getMapOperands());
+          auto map = moreDimToOneDimMap(loadOp, 0, resShape, loadOp->getContext());
+          mlir::OpBuilder tempb(loadOp);
+          auto newLoadOp = tempb.create<affine::AffineLoadOp>(loadOp.getLoc(), newAllocOp.getResult(), map, loadOp.getMapOperands());
           loadOp.getResult().replaceAllUsesWith(newLoadOp.getResult());
-          loadOp.erase();
-
+          opToDelete.push_back(loadOp);
         } else if (auto storeOp = mlir::dyn_cast<affine::AffineStoreOp>(user)) {
-          auto map = moreDimToOneDimMap(storeOp, 0, shapes, storeOp->getContext());
-          b.setInsertionPointAfter(storeOp);
-          b.create<affine::AffineStoreOp>(storeOp.getLoc(), storeOp.getValue(), newAllocOp.getResult(), map, storeOp.getMapOperands());
-          storeOp.erase();
-
+          auto map = moreDimToOneDimMap(storeOp, 0, resShape, storeOp->getContext());
+          mlir::OpBuilder tempb(storeOp);
+          tempb.create<affine::AffineStoreOp>(storeOp.getLoc(), storeOp.getValue(), newAllocOp.getResult(), map, storeOp.getMapOperands());
+          opToDelete.push_back(storeOp);
         } else if (auto vectorLoadOp = mlir::dyn_cast<affine::AffineVectorLoadOp>(user)) {
-          auto map = moreDimToOneDimMap(vectorLoadOp, 0, shapes, vectorLoadOp->getContext());
-          b.setInsertionPointAfter(vectorLoadOp);
-          auto newVectorLoadOp = b.create<affine::AffineVectorLoadOp>(vectorLoadOp.getLoc(), vectorLoadOp.getVectorType(), 
+          auto map = moreDimToOneDimMap(vectorLoadOp, 0, resShape, vectorLoadOp->getContext());
+          mlir::OpBuilder tempb(vectorLoadOp);
+          auto newVectorLoadOp = tempb.create<affine::AffineVectorLoadOp>(vectorLoadOp.getLoc(), vectorLoadOp.getVectorType(), 
                                                               newAllocOp.getResult(), map, vectorLoadOp.getMapOperands());
           vectorLoadOp.getResult().replaceAllUsesWith(newVectorLoadOp.getResult());
-          vectorLoadOp.erase();
+          opToDelete.push_back(vectorLoadOp);
+
 
         } else if (auto vectorStoreOp = mlir::dyn_cast<affine::AffineVectorStoreOp>(user)) {
-          auto map = moreDimToOneDimMap(vectorStoreOp, 0, shapes, vectorStoreOp->getContext());
-          b.setInsertionPointAfter(vectorStoreOp);
-          b.create<affine::AffineVectorStoreOp>(vectorStoreOp.getLoc(), vectorStoreOp.getValue(), 
+          auto map = moreDimToOneDimMap(vectorStoreOp, 0, resShape, vectorStoreOp->getContext());
+          mlir::OpBuilder tempb(vectorStoreOp);
+          tempb.create<affine::AffineVectorStoreOp>(vectorStoreOp.getLoc(), vectorStoreOp.getValue(), 
                                             newAllocOp.getResult(), map, vectorStoreOp.getMapOperands());
-          vectorStoreOp.erase();
+          opToDelete.push_back(vectorStoreOp);
         }
         else {
           assert(false && " KCG Unimplement Cast!!");
         }
       }
       op.erase();
+      for(auto userOp : opToDelete){
+        userOp->erase();
+      }
     });
 
   }
@@ -881,7 +879,7 @@ std::unique_ptr<OperationPass<ModuleOp>> ReplaceAllocToGetglobalPass() {
 std::unique_ptr<OperationPass<ModuleOp>> createCombineMemrefPass() {
   return std::make_unique<CombineMemrefPass>();
 }
-
+// *** Unused ***
 std::unique_ptr<OperationPass<ModuleOp>> createFlattenMemrefPass() {
   return std::make_unique<FlattenMemrefPass>();
 }

@@ -1,7 +1,7 @@
 # 公共函数和基本类
 
 import hashlib
-from enum import Enum
+from enum import Enum, IntEnum
 import contextlib
 import functools
 import io
@@ -13,6 +13,7 @@ import sys
 import sysconfig
 from typing import List,Type
 import setuptools
+import torch
 
 
 # TODO: is_hip shouldn't be here
@@ -151,6 +152,30 @@ class EnumBackendType(Enum):
     INVALID = 3
     def __str__(self):
         return f'{self.name}'
+    
+class EnumKernelDType(IntEnum):
+    float8 = 1
+    float16 = 2
+    float32 = 4
+    float64 = 8
+    float128 = 16
+    int8 = 11
+    int16 = 12
+    int32 = 14
+    int64 = 18
+    def __str__(self):
+        return f'{self.name}'
+
+def ToTorchType (t : EnumKernelDType) -> torch.dtype:
+    if t==EnumKernelDType.float32 :
+        return torch.float32
+    if t==EnumKernelDType.float64 :
+        return torch.float64
+    if t==EnumKernelDType.float16 :
+        return torch.float16
+
+def sizeof(t : EnumKernelDType) : # bytes
+    return int(t) % 10
 
 def get_kernel_name(src: str, pattern: str) -> str:
     '''
@@ -249,3 +274,47 @@ class PathManager :
     def kcg_compiler_path()->str:
         return os.path.join(PathManager.project_dir(),"bin/libkcg_compiler.so")
         # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
+
+class KernelRuntimeParam : 
+    def __init__(self):
+        self.num_ctas = 1
+        self.clusterDims = [1,1,1]
+        self.shared = 16896
+        self.enterHookFunc = None
+        self.exitHookFunc = None
+
+class KernelArgMatmul :
+    def __init__(self,m,n,k,typeA : EnumKernelDType,typeB : EnumKernelDType,typeC : EnumKernelDType):
+        self.BLOCK_SIZE_M= 64
+        self.BLOCK_SIZE_N= 64
+        self.BLOCK_SIZE_K= 16
+        self.THREAD_SIZE_M= 4
+        self.THREAD_SIZE_N= 4
+        self.VECTORIZE_WIDTH= 4
+        self.WARP_SIZE= 64 
+        self.BLOCK_LAYOUT_M= 4
+        self.BLOCK_LAYOUT_N= 1
+        self.WARP_LAYOUT_M= 4
+        self.__dataType_A = typeA
+        self.__dataType_B = typeB
+        self.__dataType_C = typeC
+        self.M = m
+        self.N = n
+        self.K = k
+    
+    def dtype(self,index:str)->EnumKernelDType :
+        if index=='A':
+            return self.__dataType_A
+        if index=='B':
+            return self.__dataType_B
+        if index=='C':
+            return self.__dataType_C
+    
+    def dtypeTorch(self,index:str)->torch.dtype:
+        if index=='A':
+            return ToTorchType(self.__dataType_A)
+        if index=='B':
+            return ToTorchType(self.__dataType_B)
+        if index=='C':
+            return ToTorchType(self.__dataType_C)
+    

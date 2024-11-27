@@ -12,148 +12,43 @@ from kcg.Operators import matmul
 import sys
 from kcg.KCGCompiler import KCGCompiler
 
+m_len=1024; n_len=1024; k_len=1024
 
-class kcgData:
-    hsacoPath='/tmp/kcg_kernel-6e4089/kcg_kernel-6e4089.hsaco'
-    funName = 'Matmul_m1024n1024k1024'
+kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
+    EnumKernelDType.float32,
+    EnumKernelDType.float32,
+    EnumKernelDType.float32)
 
-class kcgData_1:
-    hsacoPath='/tmp/kcg_kernel-07b4bb/kcg_kernel-07b4bb.hsaco'
-    funName = 'Matmul_m1024n1024k1024_randomString'
-    des = 'wavespereu=1,local=0'
-    res='''
-    kernel-name:"Matmul_m1024n1024k1024_randomString"
- kernel dispatch index                     5
- gpu id                                    0
- dispatch queue id                         0
- dispatch queue index                      6
- thread id                                 3941291
- grid size                                 16384
- work group size                           256
- shared memory size                        16896
- scratch size                              16388
- vgpr count                                26
- sgpr count                                2
- fbarrier count                            0
- signal handle                             0x0
- kernel time                               0.001434(s)
- processed ALU instructions                15.878180(%)
- performance                               1715.676759(Gflops)
- shared memory operation                   2260736
- shared memory bank conflict               11.693879(%)
- L1 cache unit is active                   18.687479(%)
- L1 cache unit is stalled                  0.345780(%)
- L2 cache write unit is stalled            0.227867(%)
- L2 cache hit rate                         82.671241(%)
-    '''
-
-class tritonData_finalLL_opt: # OK
-    funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
-    hsacoPath = "/tmp/kcg_kernel-1dffff/kcg_kernel-1dffff.hsaco"
-    res='''
-        hsaco OK. amdgcn 有符号表
-    '''
-
-class tritonData_finalLL_nopt: # OK
-    funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
-    hsacoPath='/tmp/kcg_kernel-037a94/kcg_kernel-037a94.hsaco'
-    res='''
-        hsaco OK. amdgcn 有符号表
-    '''
-
-class tritonData_midLL_opt:
-    funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
-    hsacoPath = '/tmp/kcg_kernel-bee8d3/kcg_kernel-bee8d3.hsaco'
-    res = '''
-====1
-====2
-"Cannot find Symbol"
-Aborted (core dumped)
-
-amdgcn: amdhsa.kernels:  []
-tritonData_finalLL_nopt amdgcn: 正常.p2align = 8, 这个=2 
-    '''
-
-class tritonData_midLL_nopt:
-    funName = "matmul_kernel_0d1d2d3de4de5de6de7c8de9c10de11c"
-    hsacoPath = '/tmp/kcg_kernel-86e6bc/kcg_kernel-86e6bc.hsaco'
-    res = '''
-parsed info: data_size = 46
-parsed info: shared = 50000
-parsed info: device = 0
-====1
-====2
-"Cannot find Symbol"
-Aborted (core dumped)
-产出amdgcn 没有符号表，正常.p2align = 8, 这个=2 
-    '''
-
-    
-# '''
-# 结论：搬运过来的amendFUnc逻辑缺少数据，不能直接作用在llIR上，还需要之前lowering过程里 mlir 的信息
-#    基于mlirmodule的数据做amendFUnction ： 影响符号表生成
-# '''
-
-ts = TilingScheme()
-ts.BLOCK_SIZE_M= 64
-ts.BLOCK_SIZE_N=64
-ts.BLOCK_SIZE_K=16
-ts.THREAD_SIZE_M= 4
-ts.THREAD_SIZE_N= 4
-ts.VECTORIZE_WIDTH= 4
-ts.WARP_SIZE= 64 
-ts.BLOCK_LAYOUT_M= 4
-ts.BLOCK_LAYOUT_N= 1
-ts.WARP_LAYOUT_M= 4
-ts.WARP_LAYOUT_N= 16
+kp_matmul.BLOCK_SIZE_M= 64
+kp_matmul.BLOCK_SIZE_N=64
+kp_matmul.BLOCK_SIZE_K=16
+kp_matmul.THREAD_SIZE_M= 4
+kp_matmul.THREAD_SIZE_N= 4
+kp_matmul.VECTORIZE_WIDTH= 4
+kp_matmul.WARP_SIZE= 64 
+kp_matmul.BLOCK_LAYOUT_M= 4
+kp_matmul.BLOCK_LAYOUT_N= 1
+kp_matmul.WARP_LAYOUT_M= 4
+kp_matmul.WARP_LAYOUT_N= 16
 
 kernelCompiler = KCGCompiler()
-hsacoPath = kernelCompiler.compile_kernel(
-    ts.BLOCK_SIZE_M,
-    ts.BLOCK_SIZE_N,
-    ts.BLOCK_SIZE_K,
-    ts.THREAD_SIZE_M,
-    ts.THREAD_SIZE_N,
-    ts.VECTORIZE_WIDTH,
-    ts.WARP_SIZE,
-    ts.BLOCK_LAYOUT_M,
-    ts.BLOCK_LAYOUT_N,
-    ts.WARP_LAYOUT_M,
-    ts.WARP_LAYOUT_N 
-)
+hsacoPath,kernelName = kernelCompiler.compileKernel(kp_matmul)
 
 print("========= hsacoPath = ",hsacoPath)
-dataCollection = kcgData
-dataCollection.hsacoPath = hsacoPath
+print("========= kernelName = ",kernelName)
+# funName = 'Matmul_m1024n1024k1024'
 
-inConfig = UserInputs(dataCollection.hsacoPath,dataCollection.funName,ts)
+inConfig = UserInputs(hsacoPath,kernelName,kp_matmul)
 inConfig.operatorKind = EnumOperator.Matmul
-inConfig.dtype_0 = torch.float32
-inConfig.dtype_1 = torch.float32
+packedKernel = CompiledKernelFactory.getKernel(inConfig)
 
-o = CompiledKernelFactory.getKernel(inConfig)
-# 需要根据前端调用形式，对run的参数进行确定.并修改operator的参数模板
-    # M, K = a.shape
-    # K, N = b.shape
-    # # Allocates output.
-    # c = torch.empty((M, N), device=a.device, dtype=dataType)dataType 1D launch kernel where each block gets its own program.
-    # grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE_M']) * triton.cdiv(N, META['BLOCK_SIZE_N']), )
-    # matmul_kernel[grid](
-    #     a, b, c,  #
-    #     M, N, K,  #
-    #     a.stride(0), a.stride(1),  #
-    #     b.stride(0), b.stride(1),  #
-    #     c.stride(0), c.stride(1),  #
-    #     ACTIVATION=activation  #
-    # )
-dim = 1024
-a = torch.rand(dim,dim,dtype=inConfig.dtype_0,device='cuda')
-b = torch.rand(dim,dim,dtype=inConfig.dtype_1,device='cuda')
-c = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
-d = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
+a = torch.rand(m_len,k_len,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
+b = torch.rand(k_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
+c = torch.empty(m_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
+d = torch.empty(m_len,n_len,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
 M, K = a.shape
 K, N = b.shape
-o.run(a,b,c)
+packedKernel.run(a,b,c)
 
 # o.run(a,b,c,
 #       M,N,K, a.stride(0), a.stride(1),  

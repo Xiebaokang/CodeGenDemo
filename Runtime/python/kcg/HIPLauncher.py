@@ -385,6 +385,7 @@ class MockData :
         self.enterHookFunc = None
         self.exitHookFunc = None
         # self.shared = 40000
+        # M,N,K : M/block
 
 
 class HIPLauncher :
@@ -426,7 +427,8 @@ class HIPLauncher :
         gridDims = self.m_kernelLib.m_gridDims
         blockDims = self.m_kernelLib.m_blockDims
         wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
-                m.num_ctas,
+                # m.num_ctas,
+                gridDims[0]*gridDims[1]*gridDims[2],
                 m.clusterDims[0],m.clusterDims[1],m.clusterDims[2],
                 m.shared,stream,
                 self.m_kernelLib.m_kernelInfo.m_function, 

@@ -41,6 +41,11 @@ namespace KernelCodeGen
     bool lowering(mlir::ModuleOp &mod);
 
     std::string translate(mlir::ModuleOp& mod);
+    
+    template <typename OperatorType>
+    std::string kernelFuncName(){
+      return OperatorType::getKernelName();
+    }
 
   private:
     mlir::MLIRContext context;

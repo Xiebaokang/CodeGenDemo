@@ -4,6 +4,8 @@
 
 namespace KernelCodeGen {
 
+std::string Matmul::s_function = "Unknown";
+
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
   if(dtype == "float32") return builder.getF32Type();
   if(dtype == "float64") return builder.getF64Type();
@@ -14,6 +16,24 @@ mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
   if(dtype == "index") return builder.getIndexType();
   if(dtype == "bool") return builder.getIntegerType(1);
   return nullptr;
+}
+
+std::string KcgDtypeToStr(KcgDtype type){
+  switch (type){
+    case KcgDtype::float8   : return "";break;
+    case KcgDtype::float16  : return "float16";break;
+    case KcgDtype::float32  : return "float32";break;
+    case KcgDtype::float64  : return "float64";break;
+    case KcgDtype::float128 : return "";break;
+    case KcgDtype::int8     : return "";break;
+    case KcgDtype::int16    : return "int16";break;
+    case KcgDtype::int32    : return "int32";break;
+    case KcgDtype::int64    : return "int64";break;
+  default:
+    assert(false && "KcgDtypeToStr Error");
+    break;
+  }
+  return "";
 }
 
 std::string typeToStr(mlir::Type type) {
@@ -31,7 +51,7 @@ std::string typeToStr(mlir::Type type) {
 }
 
 mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcName, const std::string& OpName, 
-                                 const std::vector<mlir::Type>& inputsTypes, mlir::Type dtype) {
+                                 const std::vector<mlir::Type>& inputsTypes) {
   mlir::OpBuilder builder(module);
   builder.setInsertionPointToStart(module.getBody());
   llvm::ArrayRef<mlir::Type> inputsTypesArray(inputsTypes);
@@ -52,7 +72,7 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcN
   funcOp->setAttr(std::string("func.op.name"), builder.getStringAttr(OpName));
   funcOp->setAttr(std::string(AttrVisibility), builder.getStringAttr("public"));
   funcOp->setAttr(std::string(AttrKernelFunc), builder.getI32IntegerAttr(1));
-  funcOp->setAttr(std::string("func.dataflow.type"), builder.getStringAttr(typeToStr(dtype)));
+  // funcOp->setAttr(std::string("func.dataflow.type"), builder.getStringAttr(typeToStr(dtype)));
   auto& entryBlock = funcOp.front();
   builder.setInsertionPointToStart(&entryBlock);
   builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
@@ -60,19 +80,23 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcN
 }
 
 
-void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std::string& dtype) {
+void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<std::string>& dtypes) {
   mlir::OpBuilder builder(module);
-  auto ver = verify(builder, shape, dtype);
-  if (!ver.first) {
-    llvm::errs() << ver.second << "\n";
+  auto ver = verify(builder, shape, dtypes);
+  if (ver.has_value()) {
+    llvm::errs() << ver.value() << "\n";
     return ;
   }
 
   int64_t m = shape[0];
   int64_t n = shape[1];
   int64_t k = shape[2];
-  auto emType = getDType(builder, dtype);
-  mlir::func::FuncOp funcOp = createFunc(module, shape, emType);
+  std::vector<mlir::Type> mlirTypeArray;
+  for(auto type : dtypes){
+    auto mlirType = getDType(builder, type);
+    mlirTypeArray.push_back(mlirType);
+  }
+  mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray);
   auto& bodyBlock = funcOp.front();
 
   // auto ip = builder.saveInsertionPoint();
@@ -80,15 +104,15 @@ void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std:
   mlir::ValueRange operands = bodyBlock.getArguments();
 
   mlir::Location loc_ = builder.getUnknownLoc();
-  mlir::SmallVector<int64_t, 3> lowerBounds(2, /*Value=*/0);
-  mlir::SmallVector<int64_t, 3> steps(2, /*Value=*/1);
-  mlir::SmallVector<int64_t, 3> upperBounds({m, n});
+  mlir::SmallVector<int64_t, 3> lowerBounds = {0,0};
+  mlir::SmallVector<int64_t, 3> steps = {1,1};
+  mlir::SmallVector<int64_t, 3> upperBounds = {m, n};
   mlir::affine::buildAffineLoopNest(builder, loc_, lowerBounds, upperBounds, steps,
     [&](mlir::OpBuilder &nestedBuilder, mlir::Location loc, mlir::ValueRange ivs) {
       auto i = ivs[0];
       auto j = ivs[1];
 
-      auto zero = nestedBuilder.create<mlir::arith::ConstantOp>(loc, nestedBuilder.getFloatAttr(emType, 0));
+      auto zero = nestedBuilder.create<mlir::arith::ConstantOp>(loc, nestedBuilder.getFloatAttr(mlirTypeArray[2], 0));
 
       auto kLoopBody = [&](mlir::OpBuilder &builder, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
         mlir::OpBuilder::InsertionGuard nestedGuard(builder);
@@ -108,24 +132,28 @@ void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std:
 }
 
 
-std::pair<bool, std::string> Matmul::verify(mlir::OpBuilder builder, std::vector<int64_t> shape, const std::string& dtype) {
-  std::string err{""};
-  if (shape.size() > 3) {
+std::optional<std::string> Matmul::verify(
+  mlir::OpBuilder builder, std::vector<int64_t> shape, const std::vector<std::string>& dtypes) {
+  if (shape.size() != 3) {
     std::string err{"Shape size must is 3."};
-    return std::make_pair(false, err);
+    return err;
   }
-
-  auto type = getDType(builder, dtype);
-  if (type == nullptr) {
-    std::string err{"No exist this data type."};
-    return std::make_pair(false, err);
+  if(dtypes.size() != 3) {
+    std::string err{"dtypes size must is 3."};
+    return err;
   }
-
-  return std::make_pair(true, err);
+  for(auto dtype : dtypes){
+    auto type = getDType(builder, dtype);
+    if (type == nullptr) {
+      std::string err{"No exist this data type."};
+      return err;
+    }
+  }
+  return std::nullopt;
 }
 
 
-mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, mlir::Type dtype) {
+mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<mlir::Type>& dtype) {
   int64_t m = shape[0];
   int64_t n = shape[1];
   int64_t k = shape[2];
@@ -133,12 +161,12 @@ mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t
   auto shape_b = std::vector<int64_t>{k, n};
   auto shape_c = std::vector<int64_t>{m, n};
   auto ms = MemorySpace::global;
-  auto typeA = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_a), dtype, {}, static_cast<int>(ms));
-  auto typeB = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_b), dtype, {}, static_cast<int>(ms));
-  auto typeC = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_c), dtype, {}, static_cast<int>(ms));
-  auto funcName = "Matmul_m" + std::to_string(m) + "n" + std::to_string(n) +  "k" + std::to_string(k);
+  auto typeA = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_a), dtype[0], {}, static_cast<int>(ms));
+  auto typeB = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_b), dtype[1], {}, static_cast<int>(ms));
+  auto typeC = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_c), dtype[2], {}, static_cast<int>(ms));
+  Matmul::s_function = "Matmul_m" + std::to_string(m) + "n" + std::to_string(n) +  "k" + std::to_string(k);
 
-  return buildFunction(module, funcName, "Matmul", {typeA, typeB, typeC}, dtype);
+  return buildFunction(module, Matmul::s_function, "Matmul", {typeA, typeB, typeC});
 }
 
 }

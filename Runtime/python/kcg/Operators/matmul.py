@@ -55,9 +55,8 @@ def _matmul(a, b):
     # )
 
 
-
 # public interface:
-def getMatmulSignature(dtypeA, dtypeB):
+def getMatmulSignature(dtypeA: torch.dtype, dtypeB : torch.dtype):
     # signature只和输入的dtype有关，尺寸无关
     a = torch.randn((1024, 1024), device='cuda', dtype=dtypeA)
     b = torch.randn((1024, 1024), device='cuda', dtype=dtypeB)

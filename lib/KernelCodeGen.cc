@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <filesystem>
 #include <fstream>
+#include "mlir/Dialect/Affine/Passes.h"
 
 namespace KernelCodeGen {
 
@@ -36,10 +37,13 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
   pm.addPass(ReplaceAllocToGetglobalPass());
   // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
+  pm.addPass(createSymbolDCEPass());
+  pm.addPass(createCSEPass());
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
 }
+
 
 
 bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
@@ -60,6 +64,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
   pm.addPass(createParallelToROCDLPass());                         // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
+  pm.addNestedPass<mlir::func::FuncOp>(createLoopInvariantCodeMotionPass());
   pm.addPass(mlir::createConvertSCFToCFPass());                    // scf -> cf
 
   ConvertControlFlowToLLVMPassOptions cfOptions;
@@ -106,17 +111,16 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   // mod.dump();
   std::string libsPath{"/home/pangyunfei/xushilong/CodeGenDemo/third_party/hip/lib/bitcode"};
+  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();mod.dump();
+  
   transforms(mod, context, libsPath, arch);
-  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();
-  mod.dump();
+  llvm::outs() << " === after transforms =====\n";llvm::outs().flush();mod.dump();
 
   firstLowering(mod, context);
-  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();
-  mod.dump();
+  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();mod.dump();
 
   secondLowering(mod, context);
-  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();
-  mod.dump();
+  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();mod.dump();
   
   return true;
 }
