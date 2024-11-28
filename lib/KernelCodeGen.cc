@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include "mlir/Dialect/Affine/Passes.h"
+#include "Conversion/CheckPasses.h"
 
 namespace KernelCodeGen {
 
@@ -39,6 +40,7 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createCSEPass());
+
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  

@@ -275,14 +275,6 @@ class PathManager :
         return os.path.join(PathManager.project_dir(),"bin/libkcg_compiler.so")
         # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
 
-class KernelRuntimeParam : 
-    def __init__(self):
-        self.num_ctas = 1
-        self.clusterDims = [1,1,1]
-        self.shared = 16896
-        self.enterHookFunc = None
-        self.exitHookFunc = None
-
 class KernelArgMatmul :
     def __init__(self,m,n,k,typeA : EnumKernelDType,typeB : EnumKernelDType,typeC : EnumKernelDType):
         self.BLOCK_SIZE_M= 64

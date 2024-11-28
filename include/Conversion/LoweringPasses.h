@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _LoweringPasses_h_
+#define _LoweringPasses_h_
 
 #include "utils.h"
 
@@ -32,3 +33,5 @@ std::unique_ptr<OperationPass<ModuleOp>> createCombineMemrefPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createFlattenMemrefPass();
 }
+
+#endif

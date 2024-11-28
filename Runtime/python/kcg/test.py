@@ -13,9 +13,9 @@ import sys
 from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
-m_len=2048
-n_len=2048
-k_len=2048
+m_len=1024
+n_len=1024
+k_len=1024
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
@@ -23,17 +23,17 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-kp_matmul.BLOCK_SIZE_M= 64
-kp_matmul.BLOCK_SIZE_N=64
-kp_matmul.BLOCK_SIZE_K=16
-kp_matmul.THREAD_SIZE_M= 4
-kp_matmul.THREAD_SIZE_N= 4
+kp_matmul.BLOCK_SIZE_M= 128
+kp_matmul.BLOCK_SIZE_N= 128
+kp_matmul.BLOCK_SIZE_K= 16
+kp_matmul.THREAD_SIZE_M= 8
+kp_matmul.THREAD_SIZE_N= 8
 kp_matmul.VECTORIZE_WIDTH= 4
-kp_matmul.WARP_SIZE= 64 
 kp_matmul.BLOCK_LAYOUT_M= 4
 kp_matmul.BLOCK_LAYOUT_N= 1
 kp_matmul.WARP_LAYOUT_M= 4
 kp_matmul.WARP_LAYOUT_N= 16
+kp_matmul.WARP_SIZE= 64
 
 
 def test_correctness(kpm : KernelArgMatmul):

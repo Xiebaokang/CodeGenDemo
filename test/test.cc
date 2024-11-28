@@ -40,7 +40,7 @@ public:
   int m_BLOCK_LAYOUT_N;
   int m_WARP_LAYOUT_M;
   int m_WARP_LAYOUT_N;
-
+#ifdef COMPILE_AS_PYMODULE
   bool parse(PyObject* args){
     if(PyArg_ParseTuple(args, std::string(17,'i').c_str(),
       &m_BLOCK_SIZE_M,
@@ -62,6 +62,7 @@ public:
     assert(false && "PyArg_ParseTuple Error");
     return false;
   }
+#endif
 
 };
 
@@ -182,9 +183,12 @@ int main(){
   std::vector<Config> configs = {
     {
       {KEY_BLOCK_SIZE_M, 64}, {KEY_BLOCK_SIZE_N, 64}, {KEY_BLOCK_SIZE_K, 16}, 
-      {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 4}, {KEY_VECTORIZE_WIDTH, 4}, {KEY_WARP_SIZE, 64}, 
+      {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 4}, {KEY_VECTORIZE_WIDTH, 4*2}, {KEY_WARP_SIZE, 64}, 
       {KEY_BLOCK_LAYOUT_M, 4}, {KEY_BLOCK_LAYOUT_N, 1}, {KEY_WARP_LAYOUT_M, 4}, {KEY_WARP_LAYOUT_N, 16},
-      {KEY_DTYPE, (int)KcgDtype::float32}
+      {KEY_DTYPE_A, (int)KcgDtype::float16},
+      {KEY_DTYPE_B, (int)KcgDtype::float16},
+      {KEY_DTYPE_C, (int)KcgDtype::float16},
+      {KEY_M, 1024},{KEY_N, 1024},{KEY_K, 1024}
     },
     // {
     //   {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 64}, {"BLOCK_SIZE_K", 32}, 

@@ -13,17 +13,21 @@ struct SCFParallelToGPULowering : public OpRewritePattern<scf::ParallelOp> {
   LogicalResult matchAndRewrite(scf::ParallelOp outerParallelOp, PatternRewriter &rewriter) const final {
     constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
     auto &ops = outerParallelOp.getBody()->getOperations();
-    if (ops.empty())
+    if (ops.empty()){
+      assert(false && "SCFParallel->GPU : outerParallelOp not exist!");
       return failure();
-
+    }
+    outerParallelOp.getLowerBound();
     scf::ParallelOp innerParallelOp = nullptr;
     for (Operation &op : ops) {
       innerParallelOp = dyn_cast<scf::ParallelOp>(&op);
       if (innerParallelOp)
         break;
     }
-    if (!innerParallelOp)
+    if (!innerParallelOp){
+      assert(false && "SCFParallel->GPU : innerParallelOp not exist!");
       return failure();
+    }
 
     auto outerUpperBounds = outerParallelOp.getUpperBound();
     auto innerUpperBounds = innerParallelOp.getUpperBound();
