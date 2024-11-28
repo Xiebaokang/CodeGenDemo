@@ -168,6 +168,21 @@ enum class KcgDtype : int {
   int64 = 18
 };
 
+static std::ostream& operator<<(std::ostream& s, KcgDtype ty){
+  switch(ty){
+    case KcgDtype::float8: s << "f8" ; break;
+    case KcgDtype::float16: s << "f16" ; break;
+    case KcgDtype::float32: s << "f32" ; break;
+    case KcgDtype::float64: s << "f64" ; break;
+    case KcgDtype::float128: s << "f128" ; break;
+    case KcgDtype::int8: s << "i8" ; break;
+    case KcgDtype::int16: s << "i16" ; break;
+    case KcgDtype::int32: s << "i32" ; break;
+    case KcgDtype::int64: s << "i64" ; break;
+    default : break;
+  }
+  return s;
+}
 
 #define AttrKernelFunc "nvvm.kernel"
 #define AttrVisibility "sym_visibility" 

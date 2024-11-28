@@ -63,7 +63,15 @@ public:
     return false;
   }
 #endif
-
+  std::string getKernelName() const {
+    std::stringstream ss;
+    ss << "GEMM_mnk";
+    ss << m_size << "x" << n_size << "x" << k_size << "_";
+    ss << m_dtypeA << m_dtypeB << m_dtypeC << "_";
+    ss << "TTmn" << m_THREAD_SIZE_M <<"x"<< m_THREAD_SIZE_N << "_";
+    ss << "BTmnk" << m_BLOCK_SIZE_M << "x" << m_BLOCK_SIZE_N << "x" << m_BLOCK_SIZE_K ;
+    return ss.str();
+  }
 };
 
 std::ostream& operator<<(std::ostream& os, MatmulParams arg){
@@ -93,10 +101,16 @@ struct KernelInfo {
   std::string m_kernelName;
 };
 
-std::map<Config, KernelInfo> testConfigs(std::vector<Config> configs) {
+std::map<Config, KernelInfo> testConfigs(
+  std::vector<Config>& configs,
+  const std::vector<std::string>& kernelNames) 
+{
+  assert(configs.size() == kernelNames.size() && "configs & kernelNames size match");
   std::map<Config, KernelInfo> result;
   KernelCodeGenerator generator(Target::ROCm, "906");
-  for (auto config : configs) {
+  for (int i=0;i<configs.size();++i) {
+    auto config = configs[i];
+    const auto& name = kernelNames[i];
     KernelInfo info;
     auto dtypeA = KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_A]);
     auto dtypeB = KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_B]);
@@ -104,9 +118,11 @@ std::map<Config, KernelInfo> testConfigs(std::vector<Config> configs) {
     auto M = config[KEY_M];
     auto N = config[KEY_N];
     auto K = config[KEY_K];
+
     auto kernel = generator.create<Matmul>(
       std::vector<int64_t>{M, N, K},
-      std::vector<std::string>{dtypeA,dtypeB,dtypeC}
+      std::vector<std::string>{dtypeA,dtypeB,dtypeC},
+      name
     );
     auto res1 = generator.optimize(kernel, config);
     std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
@@ -132,10 +148,11 @@ KernelInfo _compile(const MatmulParams& cfg) {
       {KEY_BLOCK_LAYOUT_M, cfg.m_BLOCK_LAYOUT_M}, {KEY_BLOCK_LAYOUT_N, cfg.m_BLOCK_LAYOUT_N}, 
       {KEY_WARP_LAYOUT_M, cfg.m_WARP_LAYOUT_M}, {KEY_WARP_LAYOUT_N, cfg.m_WARP_LAYOUT_N},
       {KEY_DTYPE_A, (int)cfg.m_dtypeA},{KEY_DTYPE_B, (int)cfg.m_dtypeB},{KEY_DTYPE_C, (int)cfg.m_dtypeC},
-      {KEY_M, (int)cfg.m_size},{KEY_N, (int)cfg.n_size},{KEY_K, (int)cfg.k_size},
+      {KEY_M, (int)cfg.m_size},{KEY_N, (int)cfg.n_size},{KEY_K, (int)cfg.k_size}
     }
   };
-  auto result = testConfigs(configs);
+  std::vector<std::string> names = {cfg.getKernelName()};
+  auto result = testConfigs(configs,names);
   return result[configs[0]];
 }
 
@@ -196,7 +213,8 @@ int main(){
     //   {"BLOCK_LAYOUT_M", 4}, {"BLOCK_LAYOUT_N", 1}, {"WARP_LAYOUT_M", 4}, {"WARP_LAYOUT_N", 16}
     // }
   };
-  auto result = testConfigs(configs);
+  std::vector<std::string> names = {"GEMM_testKernel"};
+  auto result = testConfigs(configs,names);
   return 0;
 }
 

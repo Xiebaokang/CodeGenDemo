@@ -81,7 +81,11 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcN
 }
 
 
-void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<std::string>& dtypes) {
+void Matmul::build(mlir::ModuleOp module, 
+  std::vector<int64_t> shape, 
+  const std::vector<std::string>& dtypes,
+  const std::string& kernelName) 
+{
   mlir::OpBuilder builder(module);
   auto ver = verify(builder, shape, dtypes);
   if (ver.has_value()) {
@@ -97,7 +101,7 @@ void Matmul::build(mlir::ModuleOp module, std::vector<int64_t> shape, const std:
     auto mlirType = getDType(builder, type);
     mlirTypeArray.push_back(mlirType);
   }
-  mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray);
+  mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray, kernelName);
   auto& bodyBlock = funcOp.front();
 
   // auto ip = builder.saveInsertionPoint();
@@ -154,7 +158,7 @@ std::optional<std::string> Matmul::verify(
 }
 
 
-mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<mlir::Type>& dtype) {
+mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<mlir::Type>& dtype, const std::string& kernelName) {
   int64_t m = shape[0];
   int64_t n = shape[1];
   int64_t k = shape[2];
@@ -165,9 +169,9 @@ mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t
   auto typeA = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_a), dtype[0], {}, static_cast<int>(ms));
   auto typeB = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_b), dtype[1], {}, static_cast<int>(ms));
   auto typeC = mlir::MemRefType::get(llvm::ArrayRef<int64_t>(shape_c), dtype[2], {}, static_cast<int>(ms));
-  Matmul::s_function = "Matmul_m" + std::to_string(m) + "n" + std::to_string(n) +  "k" + std::to_string(k);
+  Matmul::s_function = kernelName;
 
-  return buildFunction(module, Matmul::s_function, "Matmul", {typeA, typeB, typeC});
+  return buildFunction(module, kernelName, "Matmul", {typeA, typeB, typeC});
 }
 
 }

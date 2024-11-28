@@ -23,17 +23,24 @@ struct Operator {
 };
 
 struct Matmul : Operator<Matmul> {
-  static void build(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<std::string>& dtypes);
+  static void build(mlir::ModuleOp module, 
+    std::vector<int64_t> shape, 
+    const std::vector<std::string>& dtypes,
+    const std::string& kernelName);
 
   static std::optional<std::string> verify(mlir::OpBuilder builder, std::vector<int64_t> shape, const std::vector<std::string>& dtype);
   
-  static mlir::func::FuncOp createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<mlir::Type>& dtype);
+  static mlir::func::FuncOp createFunc(mlir::ModuleOp module, 
+    std::vector<int64_t> shape, 
+    const std::vector<mlir::Type>& dtype,
+    const std::string& kernelName);
 
   static std::string s_function;
 
   static std::string getKernelName(){
     return s_function;
   }
+
 };
 }
 

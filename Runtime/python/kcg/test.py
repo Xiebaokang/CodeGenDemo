@@ -13,9 +13,9 @@ import sys
 from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
-m_len=1024
-n_len=1024
-k_len=1024
+m_len=64
+n_len=64
+k_len=64
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
@@ -23,11 +23,11 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-kp_matmul.BLOCK_SIZE_M= 128
-kp_matmul.BLOCK_SIZE_N= 128
+kp_matmul.BLOCK_SIZE_M= 64
+kp_matmul.BLOCK_SIZE_N= 64
 kp_matmul.BLOCK_SIZE_K= 16
-kp_matmul.THREAD_SIZE_M= 8
-kp_matmul.THREAD_SIZE_N= 8
+kp_matmul.THREAD_SIZE_M= 4
+kp_matmul.THREAD_SIZE_N= 4
 kp_matmul.VECTORIZE_WIDTH= 4
 kp_matmul.BLOCK_LAYOUT_M= 4
 kp_matmul.BLOCK_LAYOUT_N= 1
@@ -35,6 +35,15 @@ kp_matmul.WARP_LAYOUT_M= 4
 kp_matmul.WARP_LAYOUT_N= 16
 kp_matmul.WARP_SIZE= 64
 
+def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
+    abs_diff = torch.abs(tensor1 - tensor2)
+    rel_diff = abs_diff / (torch.abs(tensor1) + 1e-12)  # 避免除以零的情况
+
+    # 比较绝对误差和相对误差
+    error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
+    diff_elements = torch.sum(error_mask).item()
+    max_error = torch.max(torch.abs(tensor1 - tensor2))
+    return diff_elements, max_error
 
 def test_correctness(kpm : KernelArgMatmul):
     kernelCompiler = KCGCompiler()
@@ -65,8 +74,8 @@ def test_correctness(kpm : KernelArgMatmul):
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
     else:
-        print('test fail')
-        
+        diff,max_error= compare_with_error(d,c)
+        print('test fail! maxerror = ',max_error, '; diff=',diff)
         # hipprof --pmc python ./test.py 
 
 test_correctness(kp_matmul)

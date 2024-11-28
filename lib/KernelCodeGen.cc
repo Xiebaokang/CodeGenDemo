@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <fstream>
 #include "mlir/Dialect/Affine/Passes.h"
-#include "Conversion/CheckPasses.h"
 
 namespace KernelCodeGen {
 
@@ -52,7 +51,7 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createLowerAffinePass());                     // affine -> scf/vector
-  pm.addPass(mlir::createParallelLoopToGpuPass());               // scf.parallelOp -> gpu...
+  // pm.addPass(mlir::createParallelLoopToGpuPass());               // scf.parallelOp -> gpu...
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
