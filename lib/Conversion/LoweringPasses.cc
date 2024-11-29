@@ -6,6 +6,122 @@ using namespace mlir;
 
 namespace KernelCodeGen {
 
+// 将affine.parallel 提取为kernel的形式。外层内层分别替换dim变量为blockid和threadid
+struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ExtractAffineParallelPass)
+
+  void runOnOperation() override {
+    constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
+    auto mod = mlir::dyn_cast<ModuleOp>(getOperation());
+    mlir::func::FuncOp kernel = nullptr;
+    for(auto &op : mod.getOps()){
+      kernel = mlir::dyn_cast<mlir::func::FuncOp>(op);
+      if(kernel != nullptr){
+        break;
+      }
+    }
+    assert(kernel != nullptr);
+    mlir::affine::AffineParallelOp outerParallel = nullptr;
+    mlir::affine::AffineParallelOp innerParallel = nullptr;
+    for(auto &op : kernel.getOps()){
+      outerParallel = mlir::dyn_cast<mlir::affine::AffineParallelOp>(op);
+      if(outerParallel != nullptr){
+        break;
+      }
+    }
+    assert(outerParallel != nullptr);
+    mlir::Operation* betweenParallelFirstOp = nullptr;
+    for(auto &op : outerParallel.getOps()){
+      if(betweenParallelFirstOp == nullptr){
+        betweenParallelFirstOp = &op;
+      }
+      innerParallel = mlir::dyn_cast<mlir::affine::AffineParallelOp>(op);
+      if(innerParallel != nullptr){
+        break;
+      }
+    }
+    assert(innerParallel != nullptr);
+    mlir::OpBuilder builder(betweenParallelFirstOp);
+    // 
+    auto getIntUpperBounds = [](mlir::affine::AffineParallelOp& parallel,std::vector<int>& ret) 
+    {
+      for(auto e : parallel.getUpperBoundsMap().getConstantResults()) {
+        ret.push_back(e);
+      }
+    };
+    std::vector<int> in{},out{};
+    getIntUpperBounds(outerParallel,out);
+    getIntUpperBounds(innerParallel,in);
+    llvm::ArrayRef<int32_t> gridDim = out;
+    llvm::ArrayRef<int32_t> blockDim = in;
+    kernel->setAttr("func.grid.dim", builder.getDenseI32ArrayAttr(gridDim));
+    kernel->setAttr("func.block.dim", builder.getDenseI32ArrayAttr(blockDim));
+
+    mlir::SmallVector<mlir::Value,4> blockIdOps;
+    mlir::SmallVector<mlir::Value,4>  threadIdOps;
+    for(int i=0;i<outerParallel.getNumDims();++i){
+      auto bid = builder.create<mlir::gpu::BlockIdOp>(builder.getUnknownLoc(),dims[i]);
+      blockIdOps.push_back(bid);
+    }
+    for(int i=0;i<innerParallel.getNumDims();++i){
+      auto tid = builder.create<mlir::gpu::ThreadIdOp>(builder.getUnknownLoc(),dims[i]);
+      threadIdOps.push_back(tid);
+    }
+    auto argCnt = innerParallel.getBody()->getArguments().size();
+    llvm::outs() << "argCnt = " << argCnt << "\n";llvm::outs().flush();
+    for(int i=0;i<argCnt;++i){
+      Value inarg = innerParallel.getBody()->getArgument(i);
+      Value replacement = threadIdOps[i];
+      inarg.replaceAllUsesWith(replacement);
+    }
+    auto argCnt1 = outerParallel.getBody()->getArguments().size();
+    llvm::outs() << "argCnt1 = " << argCnt1 << "\n";llvm::outs().flush();
+    for(int i=0;i<argCnt1;++i){
+      Value arg = outerParallel.getBody()->getArgument(i);
+      Value replacement = blockIdOps[i];
+      arg.replaceAllUsesWith(replacement);
+    }
+    // 处理循环体中的内容
+
+    SmallVector<Operation*> innerOpsToMove;
+    for (auto &op : innerParallel.getBody()->getOperations()) {
+      // 如果需要，将操作移动到新的位置
+      innerOpsToMove.push_back(&op);
+    }
+    Operation* innerTmpOp = innerParallel;
+    for(auto op : innerOpsToMove){
+      if(mlir::dyn_cast<mlir::affine::AffineYieldOp>(op) == nullptr){
+        op->moveAfter(innerTmpOp);
+        innerTmpOp = op;
+      }
+    }
+
+    llvm::outs() << "=======A \n" ; llvm::outs().flush();
+    innerParallel.erase();
+    llvm::outs() << "=======B \n" ; llvm::outs().flush();
+
+    SmallVector<Operation*> outerOpsToMove;
+    for (auto &op : outerParallel.getBody()->getOperations()) {
+      // 如果需要，将操作移动到新的位置
+      outerOpsToMove.push_back(&op);
+    }
+    Operation* outTMpOp = outerParallel;
+    for(auto op : outerOpsToMove){
+      if(mlir::dyn_cast<mlir::affine::AffineYieldOp>(op) == nullptr){
+        op->moveAfter(outTMpOp);
+        outTMpOp = op;
+      }
+    }
+    // 删除 `affine.parallel` 操作
+    llvm::outs() << "=======C \n" ; llvm::outs().flush();
+    outerParallel.erase();
+    llvm::outs() << "=======D \n" ; llvm::outs().flush();
+    llvm::outs() << "OK\n"; llvm::outs().flush();
+  }
+};
+
+
+
 // 将scf的parallelOp 转成Gpu的block/threadIdOp表示，func添加grid/block size作为属性
 struct SCFParallelToGPULowering : public OpRewritePattern<scf::ParallelOp> {
   using OpRewritePattern<scf::ParallelOp>::OpRewritePattern;
@@ -186,7 +302,7 @@ struct ParallelToROCDLPass : public PassWrapper<ParallelToROCDLPass, OperationPa
     target.addIllegalOp<gpu::BlockIdOp, gpu::ThreadIdOp>();
     target.addLegalDialect<ROCDL::ROCDLDialect, arith::ArithDialect>();
 
-    patterns.add<SCFParallelToGPULowering>(&getContext());
+    // patterns.add<SCFParallelToGPULowering>(&getContext());
     // mlir::populateGpuToROCDLConversionPatterns(typeConverter, patterns, gpu::amd::HIP);
     patterns.add<IdOpGPUToROCDLLowering<gpu::BlockIdOp, ROCDL::BlockIdXOp, 
                                        ROCDL::BlockIdYOp, ROCDL::BlockIdZOp>>(&getContext(), StringRef{"func.grid.dim"});
@@ -838,6 +954,10 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
   }
 };
 
+
+std::unique_ptr<OperationPass<ModuleOp>> createExtractAffineParallelPass() {
+  return std::make_unique<ExtractAffineParallelPass>();
+}
 
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {
   return std::make_unique<ParallelToROCDLPass>();

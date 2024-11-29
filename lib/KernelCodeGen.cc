@@ -35,6 +35,7 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
   pm.addPass(createCombineMemrefPass());
   // pm.addPass(createFlattenMemrefPass());
   pm.addPass(ReplaceAllocToGetglobalPass());
+  pm.addPass(createExtractAffineParallelPass());
   // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
   pm.addPass(createSymbolDCEPass());
