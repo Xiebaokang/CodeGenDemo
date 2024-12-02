@@ -40,9 +40,10 @@ public:
   int m_BLOCK_LAYOUT_N;
   int m_WARP_LAYOUT_M;
   int m_WARP_LAYOUT_N;
+  int m_isATranspose = 0;
 #ifdef COMPILE_AS_PYMODULE
   bool parse(PyObject* args){
-    if(PyArg_ParseTuple(args, std::string(17,'i').c_str(),
+    if(PyArg_ParseTuple(args, std::string(18,'i').c_str(),
       &m_BLOCK_SIZE_M,
       &m_BLOCK_SIZE_N,
       &m_BLOCK_SIZE_K,
@@ -55,7 +56,8 @@ public:
       &m_WARP_LAYOUT_M,
       &m_WARP_LAYOUT_N,
       &m_dtypeA, &m_dtypeB, &m_dtypeC,
-      &m_size,&n_size,&k_size
+      &m_size,&n_size,&k_size,
+      &m_isATranspose
     )){
       return true;
     }
@@ -93,6 +95,7 @@ std::ostream& operator<<(std::ostream& os, MatmulParams arg){
   os << "- m_BLOCK_LAYOUT_N : " <<arg.m_BLOCK_LAYOUT_N << std::endl;
   os << "- m_WARP_LAYOUT_M : " <<arg.m_WARP_LAYOUT_M << std::endl;
   os << "- m_WARP_LAYOUT_N : " <<arg.m_WARP_LAYOUT_N << std::endl;
+  os << "- m_isATranspose : " <<arg.m_isATranspose << std::endl;
   return os;
 }
 
@@ -118,14 +121,35 @@ std::map<Config, KernelInfo> testConfigs(
     auto M = config[KEY_M];
     auto N = config[KEY_N];
     auto K = config[KEY_K];
-
+    bool isATranspose = config[KEY_IS_A_TRANSPOSE] > 0;
+#if 0
     auto kernel = generator.create<Matmul>(
       std::vector<int64_t>{M, N, K},
       std::vector<std::string>{dtypeA,dtypeB,dtypeC},
-      name
+      name,isATranspose
     );
+
     auto res1 = generator.optimize(kernel, config);
     std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
+#endif
+    MLIRContext ctx;
+    ctx.loadDialect<mlir::affine::AffineDialect, 
+    mlir::memref::MemRefDialect,
+    mlir::arith::ArithDialect, 
+    mlir::gpu::GPUDialect,
+    mlir::func::FuncDialect,
+    mlir::scf::SCFDialect,
+    mlir::index::IndexDialect,
+    mlir::vector::VectorDialect,
+    mlir::cf::ControlFlowDialect,
+    mlir::ROCDL::ROCDLDialect,
+    mlir::LLVM::LLVMDialect
+    >();
+    llvm::outs() << " ---- Loading outMLIR\n" ;llvm::outs().flush();
+    auto parsed = parseSourceFile<ModuleOp>("/home/pangyunfei/xushilong/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
+    auto kernel = parsed.get();
+    
+    llvm::outs() << "=== outer MLIR = \n" ;llvm::outs().flush();kernel.dump();
     auto res2 = generator.lowering(kernel);
     std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
     std::string hsacoPath = generator.translate(kernel);
@@ -148,7 +172,8 @@ KernelInfo _compile(const MatmulParams& cfg) {
       {KEY_BLOCK_LAYOUT_M, cfg.m_BLOCK_LAYOUT_M}, {KEY_BLOCK_LAYOUT_N, cfg.m_BLOCK_LAYOUT_N}, 
       {KEY_WARP_LAYOUT_M, cfg.m_WARP_LAYOUT_M}, {KEY_WARP_LAYOUT_N, cfg.m_WARP_LAYOUT_N},
       {KEY_DTYPE_A, (int)cfg.m_dtypeA},{KEY_DTYPE_B, (int)cfg.m_dtypeB},{KEY_DTYPE_C, (int)cfg.m_dtypeC},
-      {KEY_M, (int)cfg.m_size},{KEY_N, (int)cfg.n_size},{KEY_K, (int)cfg.k_size}
+      {KEY_M, (int)cfg.m_size},{KEY_N, (int)cfg.n_size},{KEY_K, (int)cfg.k_size},
+      {KEY_IS_A_TRANSPOSE,(int)cfg.m_isATranspose}
     }
   };
   std::vector<std::string> names = {cfg.getKernelName()};

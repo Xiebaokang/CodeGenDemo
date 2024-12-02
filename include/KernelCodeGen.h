@@ -36,9 +36,9 @@ namespace KernelCodeGen
       return module;
     }
 
-    bool optimize(mlir::ModuleOp &mod, std::map<std::string, int> config);
+    bool optimize(mlir::ModuleOp& mod, std::map<std::string, int> config);
 
-    bool lowering(mlir::ModuleOp &mod);
+    bool lowering(mlir::ModuleOp& mod);
 
     std::string translate(mlir::ModuleOp& mod);
     

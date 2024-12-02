@@ -84,7 +84,9 @@ mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcN
 void Matmul::build(mlir::ModuleOp module, 
   std::vector<int64_t> shape, 
   const std::vector<std::string>& dtypes,
-  const std::string& kernelName) 
+  const std::string& kernelName,
+  bool isTransposeA 
+  ) 
 {
   mlir::OpBuilder builder(module);
   auto ver = verify(builder, shape, dtypes);
@@ -101,7 +103,7 @@ void Matmul::build(mlir::ModuleOp module,
     auto mlirType = getDType(builder, type);
     mlirTypeArray.push_back(mlirType);
   }
-  mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray, kernelName);
+  mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray, kernelName,isTransposeA);
   auto& bodyBlock = funcOp.front();
 
   // auto ip = builder.saveInsertionPoint();
@@ -122,7 +124,13 @@ void Matmul::build(mlir::ModuleOp module,
       auto kLoopBody = [&](mlir::OpBuilder &builder, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
         mlir::OpBuilder::InsertionGuard nestedGuard(builder);
         auto k = iv;
-        auto ld_a = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*A*/operands[0], mlir::ValueRange({i, k}));
+        mlir::affine::AffineLoadOp ld_a = nullptr;
+        if(!isTransposeA){
+          ld_a = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*A*/operands[0], mlir::ValueRange({i, k}));
+        }
+        else{
+          ld_a = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*A*/operands[0], mlir::ValueRange({k, i}));
+        }
         auto ld_b = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*B*/operands[1], mlir::ValueRange({k, j}));
         auto mul = builder.create<mlir::arith::MulFOp>(nestedLoc, ld_a, ld_b);
         auto add = builder.create<mlir::arith::AddFOp>(nestedLoc, mul, iterArgs[0]);
@@ -158,11 +166,24 @@ std::optional<std::string> Matmul::verify(
 }
 
 
-mlir::func::FuncOp Matmul::createFunc(mlir::ModuleOp module, std::vector<int64_t> shape, const std::vector<mlir::Type>& dtype, const std::string& kernelName) {
+mlir::func::FuncOp Matmul::createFunc(
+  mlir::ModuleOp module, 
+  std::vector<int64_t> shape, 
+  const std::vector<mlir::Type>& dtype, 
+  const std::string& kernelName,
+  bool isTransposeA
+  )
+{
   int64_t m = shape[0];
   int64_t n = shape[1];
   int64_t k = shape[2];
-  auto shape_a = std::vector<int64_t>{m, k};
+  std::vector<int64_t> shape_a;
+  if(!isTransposeA){
+   shape_a = std::vector<int64_t>{m, k};
+  }
+  else{
+   shape_a = std::vector<int64_t>{k, m};
+  }
   auto shape_b = std::vector<int64_t>{k, n};
   auto shape_c = std::vector<int64_t>{m, n};
   auto ms = MemorySpace::global;

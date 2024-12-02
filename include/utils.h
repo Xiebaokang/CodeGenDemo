@@ -190,6 +190,8 @@ static std::ostream& operator<<(std::ostream& s, KcgDtype ty){
 
 #define SHM_VAR_NAME(i) (std::string("kcg_shm")+std::to_string(i))
 
+#define KCG_ALIGNBYTE 16
+
 std::string getenv(const char *name);
 
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype);
@@ -215,6 +217,7 @@ std::string KcgDtypeToStr(KcgDtype type);
 #define  KEY_M                    "M_SIZE"
 #define  KEY_N                    "N_SIZE"
 #define  KEY_K                    "K_SIZE"
+#define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
 
 }
 

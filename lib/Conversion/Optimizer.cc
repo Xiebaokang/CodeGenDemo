@@ -168,7 +168,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loopM = loops[0], loopN = loops[1], loopK = loops[2];
     auto buffers = matmulBuffers[matmul];
     auto A = buffers.A, B = buffers.B, C = buffers.C;
-    
+    llvm::outs() << "==== original mlir =====\n";llvm::outs().flush();module.dump();
     auto m_axes = Rewriter::split(loopM, 3, {config["THREAD_SIZE_M"], config["BLOCK_SIZE_M"]});
     auto n_axes = Rewriter::split(loopN, 3, {config["THREAD_SIZE_N"], config["BLOCK_SIZE_N"]});
 

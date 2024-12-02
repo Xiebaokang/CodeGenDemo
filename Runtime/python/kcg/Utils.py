@@ -277,22 +277,23 @@ class PathManager :
 
 class KernelArgMatmul :
     def __init__(self,m,n,k,typeA : EnumKernelDType,typeB : EnumKernelDType,typeC : EnumKernelDType):
-        self.BLOCK_SIZE_M= 64
-        self.BLOCK_SIZE_N= 64
-        self.BLOCK_SIZE_K= 16
-        self.THREAD_SIZE_M= 4
-        self.THREAD_SIZE_N= 4
-        self.VECTORIZE_WIDTH= 4
-        self.WARP_SIZE= 64 
-        self.BLOCK_LAYOUT_M= 4
-        self.BLOCK_LAYOUT_N= 1
-        self.WARP_LAYOUT_M= 4
-        self.__dataType_A = typeA
-        self.__dataType_B = typeB
-        self.__dataType_C = typeC
-        self.M = m
-        self.N = n
-        self.K = k
+        self.BLOCK_SIZE_M : int = 64
+        self.BLOCK_SIZE_N : int = 64
+        self.BLOCK_SIZE_K : int = 16
+        self.THREAD_SIZE_M : int = 4
+        self.THREAD_SIZE_N : int = 4
+        self.VECTORIZE_WIDTH : int = 4
+        self.WARP_SIZE : int = 64 
+        self.BLOCK_LAYOUT_M : int = 4
+        self.BLOCK_LAYOUT_N : int = 1
+        self.WARP_LAYOUT_M : int = 4
+        self.__dataType_A : EnumKernelDType = typeA
+        self.__dataType_B : EnumKernelDType = typeB
+        self.__dataType_C : EnumKernelDType = typeC
+        self.M : int = m
+        self.N : int = n
+        self.K : int = k
+        self.isATranspose : int = 0
     
     def dtype(self,index:str)->EnumKernelDType :
         if index=='A':

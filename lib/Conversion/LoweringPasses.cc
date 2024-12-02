@@ -452,9 +452,12 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
         auto unrollAttr = mlir::dyn_cast<mlir::StringAttr>(unrollName);
         // llvm::outs() << unrollAttr.getValue().str() << "\n";
         if (unrollAttr.getValue().str() == "unroll") {
-          if (failed(affine::loopUnrollFull(forOp))) {
+          if(failed(affine::loopUnrollByFactor(forOp,8))) {
             return signalPassFailure();
           }
+          // if (failed(affine::loopUnrollFull(forOp))) {
+          //   return signalPassFailure();
+          // }
         }
       }
     });
@@ -748,7 +751,7 @@ struct ReplaceAllocOpToGetGlobalOp : public PassWrapper<ReplaceAllocOpToGetGloba
           false,
           IntegerAttr()
           );
-        globalOp.setAlignment(4*4);  // 对齐到 4*sizeof(float) 字节，以增加访问效率
+        globalOp.setAlignment(KCG_ALIGNBYTE);  // 对齐到 4*sizeof(float) 字节，以增加访问效率
         auto newop = builder.create<memref::GetGlobalOp>(
           builder.getUnknownLoc(),allocOp.getResult().getType(),SHM_VAR_NAME(i));
         allocOp.getResult().replaceAllUsesWith(newop);
@@ -815,7 +818,7 @@ struct CombineMemrefPass : public PassWrapper<CombineMemrefPass, OperationPass<M
     OpBuilder b(firstOp);
     auto newType = MemRefType::get({memSize}, type.getElementType(), {}, type.getMemorySpaceAsInt());
     auto newAllocOp = b.create<AllocOrAllocaOp>(firstOp.getLoc(), newType);
-    newAllocOp.setAlignment(16);
+    newAllocOp.setAlignment(KCG_ALIGNBYTE);
     for (const auto& pair : indexMap) {
       Value result = pair.first->getResult(0);
       auto t = mlir::dyn_cast<MemRefType>(result.getType());
@@ -908,7 +911,7 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
       auto b = mlir::OpBuilder(op);
       auto newType = MemRefType::get({len}, resType.getElementType(), {}, resType.getMemorySpaceAsInt());
       auto newAllocOp = b.create<AllocOrAllocaOp>(op.getLoc(), newType);
-      newAllocOp.setAlignment(16);
+      newAllocOp.setAlignment(KCG_ALIGNBYTE);
       op.getResult().replaceAllUsesWith(newAllocOp.getResult());
       SmallVector<Operation *> opToDelete {};
 

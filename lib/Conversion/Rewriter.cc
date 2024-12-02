@@ -304,7 +304,7 @@ mlir::Value Rewriter::bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForO
   auto bufferType = mlir::MemRefType::get(
     bufferShape, dtype, {}, static_cast<int>(MemorySpace::local));
   auto allocOp = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), bufferType);
-  allocOp.setAlignment(16);
+  allocOp.setAlignment(KCG_ALIGNBYTE);
   // step1: init the buffer
   // the last operand of AffineForOp.
   auto initValue = carryVarLoop.getOperands().back();
@@ -804,7 +804,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
     defineBufferOp = mlir::dyn_cast<mlir::memref::AllocaOp>(buffer.getDefiningOp());
     builder = std::make_shared<mlir::OpBuilder>(defineBufferOp);
     allocRegistOp = builder->create<mlir::memref::AllocaOp>(builder->getUnknownLoc(), newBufferType);
-    allocRegistOp.setAlignment(16);
+    allocRegistOp.setAlignment(KCG_ALIGNBYTE);
     isAllocRegist = true;
   }
   else{

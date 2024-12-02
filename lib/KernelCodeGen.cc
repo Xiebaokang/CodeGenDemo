@@ -35,12 +35,14 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
   pm.addPass(createCombineMemrefPass());
   // pm.addPass(createFlattenMemrefPass());
   pm.addPass(ReplaceAllocToGetglobalPass());
-  pm.addPass(createExtractAffineParallelPass());
+  pm.addPass(createExtractAffineParallelPass());  // affine.parallel 根据内外层，将loopIvs 替换为bid、tid
   // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());
+  // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());  // 加入后会导致shm conflict 增加
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createCSEPass());
-
+  // pm.addPass(createCanonicalizerPass());  // 加入后会导致性能大幅下降。conflict增加
   if (mlir::failed(pm.run(mod)))
     return false;
   return true;  
@@ -113,16 +115,16 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   // mod.dump();
   std::string libsPath{"/home/pangyunfei/xushilong/CodeGenDemo/third_party/hip/lib/bitcode"};
-  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();mod.dump();
+  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();mod->dump();
   
   transforms(mod, context, libsPath, arch);
-  llvm::outs() << " === after transforms =====\n";llvm::outs().flush();mod.dump();
+  llvm::outs() << " === after transforms =====\n";llvm::outs().flush();mod->dump();
 
   firstLowering(mod, context);
-  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();mod.dump();
+  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();mod->dump();
 
   secondLowering(mod, context);
-  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();mod.dump();
+  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();mod->dump();
   
   return true;
 }

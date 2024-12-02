@@ -69,13 +69,13 @@ struct Rewriter {
     if(ms == MemorySpace::local){
       // register alloc 
       auto op = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), tensorShape);
-      op.setAlignment(16);
+      op.setAlignment(KCG_ALIGNBYTE);
       return op->getResult(0);
     }
     else{
       // shm alloc
       auto op = builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), tensorShape);
-      op.setAlignment(16);
+      op.setAlignment(KCG_ALIGNBYTE);
       return op->getResult(0);
     }
   }
