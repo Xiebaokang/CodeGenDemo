@@ -1,10 +1,11 @@
 set(outName "kcg_compiler")
-include_directories("/home/pangyunfei/anaconda3/envs/triton_rocm/include/python3.8")
+set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/tritonRocm_latest")
+include_directories("${PYTHON_CONDA_ENV_DIR}/include/python3.8")
 
 if(COMPILE_AS_PYMODULE)
     add_definitions(-DCOMPILE_AS_PYMODULE)
     message("---- compile kcg_compiler as Lib ----")
-    link_directories(/home/pangyunfei/anaconda3/envs/triton_rocm/lib)
+    link_directories("${PYTHON_CONDA_ENV_DIR}/lib")
     add_library(${outName} SHARED test.cc)
     target_link_libraries(${outName} kcg_runtime python3.8)
 else()

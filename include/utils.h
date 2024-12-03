@@ -219,6 +219,10 @@ std::string KcgDtypeToStr(KcgDtype type);
 #define  KEY_K                    "K_SIZE"
 #define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
 
-}
+// User Config Variables
+#define USER_PATH_LLD "/opt/dtk/llvm/bin/ld.lld"
+#define USER_OUTPUT_AMDGCN_PATH "/home/xushilong/CodeGenDemo/test.amdgcn"
+
+}  // namespace KernelCodeGen end
 
 #endif
