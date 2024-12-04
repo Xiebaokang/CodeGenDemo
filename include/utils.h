@@ -220,9 +220,11 @@ std::string KcgDtypeToStr(KcgDtype type);
 #define  KEY_K                    "K_SIZE"
 #define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
 
-// User Config Variables
-// #define DEBUG_AMDGCN_OUTPUT_PATH "/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn"
-// #define USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld"
+#define LOG_DEBUG(message,module)  \
+{\
+  llvm::outs() << message;llvm::outs().flush(); module.dump();\
+}
+
 
 }  // namespace KernelCodeGen end
 

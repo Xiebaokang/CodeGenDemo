@@ -41,6 +41,7 @@ struct Rewriter {
     for (auto iv : ivs) {
       idxes.push_back(iv);
     }
+    // std::reverse(idxes.begin(), idxes.end());
     return idxes;
   }
 

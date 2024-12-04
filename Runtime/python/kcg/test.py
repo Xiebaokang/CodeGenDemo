@@ -14,8 +14,8 @@ from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
 m_len=1024  # 16 blocks
-n_len=512  # 16 blocks
-k_len=128   # 8 blocks
+n_len=1024  # 16 blocks
+k_len=1024   # 8 blocks
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,

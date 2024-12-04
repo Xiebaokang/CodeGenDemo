@@ -11,6 +11,12 @@ set(DEBUG_AMDGCN_OUTPUT_PATH "/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn
 set(USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld") 
 option(COMPILE_AS_PYMODULE "Compile kcg_compiler to DynamicLib or Exe" ON)
 set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/triton_rocm")
+add_compile_options(
+  -Wno-unused-function
+  -Wno-unused-variable
+  -Wunused-result
+  -Wsign-compare
+  )
 #############################
 
 configure_file(config.h.in ${CMAKE_SOURCE_DIR}/include/config.h)
