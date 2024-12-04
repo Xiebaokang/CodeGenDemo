@@ -107,6 +107,7 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 #include "mlir/Conversion/Passes.h.inc"
+#include "config.h"
 
 // conversion
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
@@ -220,8 +221,8 @@ std::string KcgDtypeToStr(KcgDtype type);
 #define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
 
 // User Config Variables
-#define USER_PATH_LLD "/opt/dtk/llvm/bin/ld.lld"
-#define USER_OUTPUT_AMDGCN_PATH "/home/xushilong/CodeGenDemo/test.amdgcn"
+// #define DEBUG_AMDGCN_OUTPUT_PATH "/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn"
+// #define USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld"
 
 }  // namespace KernelCodeGen end
 

@@ -2,16 +2,18 @@
 ###################################################################
 cmake_minimum_required(VERSION 3.15.0)
 project(KernelCodeGen LANGUAGES CXX C)    # delete CUDA
-option(COMPILE_AS_PYMODULE "kcg_compiler output as a lib" ON)
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
-# set(LLVM_BUILD_LIBRARY_DIR /home/pangyunfei/rocm-llvm-project/build/lib)
-# message(STATUS "LLVM_BUILD_LIBRARY_DIR ${LLVM_BUILD_LIBRARY_DIR}")
+##### User config ###########
+set(LLVM_INSTALL_DIR "~/llvm-install")
+set(DEBUG_AMDGCN_OUTPUT_PATH "/home/pangyunfei/xushilong/CodeGenDemo/test.amdgcn") 
+set(USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld") 
+option(COMPILE_AS_PYMODULE "Compile kcg_compiler to DynamicLib or Exe" ON)
+set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/triton_rocm")
+#############################
 
-# set(MLIR_CONFIG_FILE_DIR /home/pangyunfei/rocm-llvm-project/build/lib/cmake/mlir)
-# message(STATUS "MLIR_CONFIG_FILE_DIR ${MLIR_CONFIG_FILE_DIR}")
-
+configure_file(config.h.in ${CMAKE_SOURCE_DIR}/include/config.h)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   find_package(MLIR REQUIRED CONFIG PATHS ./cmake)
 
@@ -46,8 +48,9 @@ include_directories(${KernelCodeGen_BINARY_DIR}/include)
 include_directories(${KernelCodeGen_SOURCE_DIR}/build/include)
 
 # link_directories(${LLVM_BUILD_LIBRARY_DIR})
-link_directories("~/rocm-llvm-project/install/lib")
+link_directories(${LLVM_INSTALL_DIR}/lib)
 add_definitions(${LLVM_DEFINITIONS})
+add_definitions()
 message("add-def:${LLVM_DEFINITIONS}")
 add_compile_options(-g)
 

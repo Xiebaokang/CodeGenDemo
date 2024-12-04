@@ -11,6 +11,7 @@
 #include "Python.h"
 #endif
 
+#define DBG_USE_EXTERN_MLIR 0
 
 using namespace KernelCodeGen;
 
@@ -122,16 +123,7 @@ std::map<Config, KernelInfo> testConfigs(
     auto N = config[KEY_N];
     auto K = config[KEY_K];
     bool isATranspose = config[KEY_IS_A_TRANSPOSE] > 0;
-#if 0
-    auto kernel = generator.create<Matmul>(
-      std::vector<int64_t>{M, N, K},
-      std::vector<std::string>{dtypeA,dtypeB,dtypeC},
-      name,isATranspose
-    );
-
-    auto res1 = generator.optimize(kernel, config);
-    std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
-#endif
+#if DBG_USE_EXTERN_MLIR
     MLIRContext ctx;
     ctx.loadDialect<mlir::affine::AffineDialect, 
     mlir::memref::MemRefDialect,
@@ -148,8 +140,17 @@ std::map<Config, KernelInfo> testConfigs(
     llvm::outs() << " ---- Loading outMLIR\n" ;llvm::outs().flush();
     auto parsed = parseSourceFile<ModuleOp>("/home/pangyunfei/xushilong/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
     auto kernel = parsed.get();
-    
     llvm::outs() << "=== outer MLIR = \n" ;llvm::outs().flush();kernel.dump();
+#else
+    auto kernel = generator.create<Matmul>(
+      std::vector<int64_t>{M, N, K},
+      std::vector<std::string>{dtypeA,dtypeB,dtypeC},
+      name,isATranspose
+    );
+
+    auto res1 = generator.optimize(kernel, config);
+    std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
+#endif
     auto res2 = generator.lowering(kernel);
     std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
     std::string hsacoPath = generator.translate(kernel);

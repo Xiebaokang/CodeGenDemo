@@ -262,7 +262,7 @@ namespace KernelCodeGen
             return std::filesystem::path(fileinfo.dli_fname);
         }();
 
-        std::string lld_path =  USER_PATH_LLD;
+        std::string lld_path = USER_LLD_PATH;
         if (!std::filesystem::exists(lld_path))
         {
             std::string rocm_path = getenv("ROCM_PATH");
@@ -324,7 +324,8 @@ namespace KernelCodeGen
         auto ret = translateLLVMIRToHSACO(module, gfx_arch, gfx_triple, gfx_features);
         std::string amdgcn = std::get<0>(ret);
         std::string hsacoPath = std::get<1>(ret);
-        std::string amdgcnPath{USER_OUTPUT_AMDGCN_PATH};
+
+        std::string amdgcnPath{DEBUG_AMDGCN_OUTPUT_PATH};
         std::ofstream outasm(amdgcnPath);
         if (outasm.is_open()) {
             outasm << amdgcn;

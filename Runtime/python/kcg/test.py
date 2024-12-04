@@ -14,8 +14,8 @@ from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
 m_len=1024  # 16 blocks
-n_len=1024  # 16 blocks
-k_len=512   # 8 blocks
+n_len=512  # 16 blocks
+k_len=128   # 8 blocks
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
@@ -34,7 +34,7 @@ kp_matmul.BLOCK_LAYOUT_N= 1
 kp_matmul.WARP_LAYOUT_M= 4
 kp_matmul.WARP_LAYOUT_N= 16
 kp_matmul.WARP_SIZE= 64
-kp_matmul.isATranspose = 1
+kp_matmul.isATranspose = 0
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
@@ -52,8 +52,9 @@ def test_correctness(kpm : KernelArgMatmul):
 
     print("========= hsacoPath = ",hsacoPath)
     print("========= kernelName = ",kernelName)
+    ###  ====  DBG：使用外部mlir调试   
     # funName = 'Matmul_m1024n1024k1024'
-    kernelName = 'GEMM_mnk1024x1024x512_f32f32f32_TTmn4x4_BTmnk64x64x16'
+    # kernelName = 'GEMM_mnk1024x1024x512_f32f32f32_TTmn4x4_BTmnk64x64x16'
 
     inConfig = UserInputs(hsacoPath,kernelName,kpm)
     inConfig.operatorKind = EnumOperator.Matmul

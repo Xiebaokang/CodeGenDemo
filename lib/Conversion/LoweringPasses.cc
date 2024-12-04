@@ -14,6 +14,7 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
     constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
     auto mod = mlir::dyn_cast<ModuleOp>(getOperation());
     mlir::func::FuncOp kernel = nullptr;
+    // 定位 funcop, innerParallel, outerParallel, 两层parallel间的首个op
     for(auto &op : mod.getOps()){
       kernel = mlir::dyn_cast<mlir::func::FuncOp>(op);
       if(kernel != nullptr){
@@ -42,7 +43,7 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
     }
     assert(innerParallel != nullptr);
     mlir::OpBuilder builder(betweenParallelFirstOp);
-    // 
+    // collect dim const and set attr
     auto getIntUpperBounds = [](mlir::affine::AffineParallelOp& parallel,std::vector<int>& ret) 
     {
       for(auto e : parallel.getUpperBoundsMap().getConstantResults()) {

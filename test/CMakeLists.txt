@@ -1,7 +1,6 @@
 set(outName "kcg_compiler")
-set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/tritonRocm_latest")
-include_directories("${PYTHON_CONDA_ENV_DIR}/include/python3.8")
 
+include_directories("${PYTHON_CONDA_ENV_DIR}/include/python3.8")
 if(COMPILE_AS_PYMODULE)
     add_definitions(-DCOMPILE_AS_PYMODULE)
     message("---- compile kcg_compiler as Lib ----")
