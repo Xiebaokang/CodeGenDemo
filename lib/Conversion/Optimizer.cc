@@ -159,6 +159,10 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   }
 }
 
+void MatmulOptimizer::_opSetDescription(mlir::Operation* op, const std::string& attrValue){
+  mlir::OpBuilder b(op->getContext());
+  op->setAttr("kcg.desc",b.getStringAttr(attrValue));
+}
 
 void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) {
   mlir::OpBuilder builder(module);
@@ -192,7 +196,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto k_axes = Rewriter::split(loopK, 2, {config["BLOCK_SIZE_K"]});
     auto k_outer = k_axes[0], k_inner = k_axes[1];
-
+    _opSetDescription(k_inner,"k_inner");
+    _opSetDescription(k_outer,"k_outer");
     int64_t blockThreads;
     auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
 
@@ -261,7 +266,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1];
     Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1});
     // module.dump();
-
+    _opSetDescription(m_inner_0,"m_inner_0");
+    _opSetDescription(m_inner_1,"m_inner_1");
+    _opSetDescription(n_inner_0,"n_inner_0");
+    _opSetDescription(n_inner_1,"n_inner_1");
     Rewriter::cache_write(m_inner_0, C, C, getAffineMap("cacheWriteC", builder, config), 
                           {threadIdx[1], threadIdx[0], blockIdx[1], blockIdx[0],
                            m_inner_0.getInductionVar(),n_inner_0.getInductionVar(),

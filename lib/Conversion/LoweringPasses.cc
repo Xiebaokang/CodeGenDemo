@@ -449,16 +449,29 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
 
   void runOnOperation() override {
     getOperation().walk([&] (affine::AffineForOp forOp){
+      uint64_t unrollFactor = 0;  // <0 : not unroll.   =0:full unroll  >1 : unroll by factor
+      if(auto desc = forOp->getAttr("kcg.desc")){
+        auto descAttr = mlir::dyn_cast<mlir::StringAttr>(desc);
+        if(descAttr.getValue().str() == "k_inner"){
+          unrollFactor = 2;
+        }
+      }
       if (auto unrollName = forOp->getAttr("affine.loop")) {
         auto unrollAttr = mlir::dyn_cast<mlir::StringAttr>(unrollName);
-        // llvm::outs() << unrollAttr.getValue().str() << "\n";
         if (unrollAttr.getValue().str() == "unroll") {
-          if(failed(affine::loopUnrollByFactor(forOp,8))) {
-            return signalPassFailure();
+          if(unrollFactor == 0){
+            auto ret = affine::loopUnrollFull(forOp);
+            if(failed(ret)){
+              return signalPassFailure();
+            }
           }
-          // if (failed(affine::loopUnrollFull(forOp))) {
-          //   return signalPassFailure();
-          // }
+          else if(unrollFactor >= 1){
+            auto ret = affine::loopUnrollJamByFactor(forOp,unrollFactor);
+            // auto ret = affine::loopUnrollByFactor(forOp,unrollFactor);
+            if(failed(ret)){
+              return signalPassFailure();
+            }
+          }
         }
       }
     });
@@ -520,7 +533,8 @@ struct SetShmSizeZeroPass : public PassWrapper<SetShmSizeZeroPass, OperationPass
         op.getThreadLocal_()
       );
       auto useRange = op.getSymbolUses(mod);
-      op.replaceAllSymbolUses(newOp.getSymNameAttr(),mod);
+      auto result = op.replaceAllSymbolUses(newOp.getSymNameAttr(),mod);
+      assert(result.succeeded() && "setshmsizezeroPass failed");
       op.erase();
       globalOps.push_back(newOp);
     });

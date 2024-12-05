@@ -25,8 +25,8 @@ bool KernelCodeGenerator::optimize(mlir::ModuleOp &mod, std::map<std::string, in
     }
     if (!opt->applicable(mod)) return false;   // collect matmul datas
     opt->applyOptimzer(mod, config);
-    return true;
   }
+  return true;
 }
 
 

@@ -13,9 +13,9 @@ import sys
 from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
-m_len=1024  # 16 blocks
-n_len=1024  # 16 blocks
-k_len=1024   # 8 blocks
+m_len=4096  # 16 blocks
+n_len=4096  # 16 blocks
+k_len=4096   # 8 blocks
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
@@ -23,9 +23,9 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-kp_matmul.BLOCK_SIZE_M= 64
-kp_matmul.BLOCK_SIZE_N= 64
-kp_matmul.BLOCK_SIZE_K= 16
+kp_matmul.BLOCK_SIZE_M= 64  # 256
+kp_matmul.BLOCK_SIZE_N= 64  # 32
+kp_matmul.BLOCK_SIZE_K= 16  # 8
 kp_matmul.THREAD_SIZE_M= 4
 kp_matmul.THREAD_SIZE_N= 4
 kp_matmul.VECTORIZE_WIDTH= 4  # 数字的个数
@@ -35,6 +35,21 @@ kp_matmul.WARP_LAYOUT_M= 4
 kp_matmul.WARP_LAYOUT_N= 16
 kp_matmul.WARP_SIZE= 64
 kp_matmul.isATranspose = 0
+
+# Cijk_Ailk_Bljk_SB_MT256x32x8_SN_APM1_AF0EM1_AF1EM1_AMAS3_ASAE01_ASCE01_ASEM1_BL1_DTL0_ETSP_EPS1_FL0_GRVW4_GSU1_GSUAMB_ISA906_IU1_K1_KLA_LPA0_LPB0_LDL1_LRVW4_MAC_MDA2_NLCA1_NLCB1_ONLL1_PK0_PGR1_PLR1_RK0_SU32_SUM0_SUS256_SVW4_SNLL0_TT8_4_USFGROn1_VAW1_VSn1_VW4_WG32_8_1_WGM1
+# kp_matmul.BLOCK_SIZE_M= 256  # 256
+# kp_matmul.BLOCK_SIZE_N= 32 # 32
+# kp_matmul.BLOCK_SIZE_K= 8  # 8
+# kp_matmul.THREAD_SIZE_M= 8
+# kp_matmul.THREAD_SIZE_N= 4  # th=32*8
+# kp_matmul.VECTORIZE_WIDTH= 4  # 数字的个数
+# kp_matmul.BLOCK_LAYOUT_M= 2
+# kp_matmul.BLOCK_LAYOUT_N= 2
+# kp_matmul.WARP_LAYOUT_M= 16
+# kp_matmul.WARP_LAYOUT_N= 4
+# kp_matmul.WARP_SIZE= 64
+# kp_matmul.isATranspose = 0
+kp_matmul.check()
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
@@ -59,7 +74,14 @@ def test_correctness(kpm : KernelArgMatmul):
     inConfig = UserInputs(hsacoPath,kernelName,kpm)
     inConfig.operatorKind = EnumOperator.Matmul
     packedKernel = CompiledKernelFactory.getKernel(inConfig)
-
+    warmupCount = 3
+    a = torch.empty(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
+    b = torch.empty(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
+    c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
+    for i in range(0,warmupCount) : # warmup
+        packedKernel.run(a,b,c)
+        torch.matmul(a,b)
+        
     a = torch.rand(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
     b = torch.rand(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
     c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
@@ -77,8 +99,8 @@ def test_correctness(kpm : KernelArgMatmul):
     #         b.stride(0), b.stride(1),  
     #         c.stride(0), c.stride(1),  
     #     )
-    print(c)
     d = torch.matmul(a,b)
+    print(c)
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
     else:

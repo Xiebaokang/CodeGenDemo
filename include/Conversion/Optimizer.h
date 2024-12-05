@@ -54,7 +54,9 @@ struct MatmulOptimizer : Optimizer {
 
   // loopM->[A, B, C]
   std::map<mlir::func::FuncOp, MemoryBuffer, CompareFunc> matmulBuffers;
-
+  
+  // private method
+  void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
 };
 
 }

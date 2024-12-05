@@ -286,7 +286,8 @@ class KernelArgMatmul :
         self.WARP_SIZE : int = 64 
         self.BLOCK_LAYOUT_M : int = 4
         self.BLOCK_LAYOUT_N : int = 1
-        self.WARP_LAYOUT_M : int = 4
+        self.WARP_LAYOUT_M : int = 16
+        self.WARP_LAYOUT_N : int = 4
         self.__dataType_A : EnumKernelDType = typeA
         self.__dataType_B : EnumKernelDType = typeB
         self.__dataType_C : EnumKernelDType = typeC
@@ -294,6 +295,21 @@ class KernelArgMatmul :
         self.N : int = n
         self.K : int = k
         self.isATranspose : int = 0
+        
+    def check(self) :
+        # problem size check
+        assert self.M % self.BLOCK_SIZE_M == 0 
+        assert self.N % self.BLOCK_SIZE_N == 0 
+        assert self.K % self.BLOCK_SIZE_K == 0 
+        # warp-block validation check
+        assert self.BLOCK_SIZE_M % self.THREAD_SIZE_M == 0
+        assert self.BLOCK_SIZE_N % self.THREAD_SIZE_N == 0
+        assert (self.BLOCK_LAYOUT_M * self.WARP_LAYOUT_M) == (self.BLOCK_SIZE_M / self.THREAD_SIZE_M)
+        assert (self.BLOCK_LAYOUT_N * self.WARP_LAYOUT_N) == (self.BLOCK_SIZE_N / self.THREAD_SIZE_N)
+        assert self.WARP_LAYOUT_N * self.WARP_LAYOUT_M == self.WARP_SIZE
+        # shm size check
+        assert 2*(self.BLOCK_SIZE_M + self.BLOCK_SIZE_N) * self.BLOCK_SIZE_K <= 65536
+        print("===== config check ok!")
     
     def dtype(self,index:str)->EnumKernelDType :
         if index=='A':
