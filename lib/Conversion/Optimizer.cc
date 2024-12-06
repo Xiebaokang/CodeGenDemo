@@ -103,7 +103,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   } else if (mapIdentifier == "storeTileB") {
     // dims are:[dim0, dim1, dim2]
     // operands are: [threadIdx.y, threadIdx.x, iv]
-    auto threadIdExpr = dim0 * blockDimX + dim1;
+    auto threadIdExpr = dim0 * blockDimX + dim1;  // tid = ty*Blockdimx + tx
     auto virtaulThreadIxExpr = threadIdExpr + dim2 * blockDimY * blockDimX;
     auto K_Offset = virtaulThreadIxExpr.floorDiv(static_cast<uint64_t>(config["BLOCK_SIZE_N"]) / width);
     auto N_Offset = virtaulThreadIxExpr % (static_cast<uint64_t>(config["BLOCK_SIZE_N"]) / width); 
@@ -228,11 +228,13 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // threadIdx[0], threadIdx[1] 两者先后交换，即可改变 tx ty 的方向
     // shm->temp
     auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[1], threadIdx[0], blockIdx[1], k_outer.getInductionVar()}, 
-                      config["VECTORIZE_WIDTH"], k_outer, Position::begin);
+                      (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+                      k_outer, Position::begin);
     auto loadTileBMap = getAffineMap("loadTileB", builder, config);
     auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
                       {threadIdx[1], threadIdx[0], k_outer.getInductionVar(), blockIdx[0]}, 
-                      config["VECTORIZE_WIDTH"], loadTileA, Position::after);
+                      (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
+                      loadTileA, Position::after);
     // module.dump();
     LOG_DEBUG("===== shm->temp =======\n",module);
 
@@ -245,7 +247,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
     auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
 
-    // module.dump();
+    LOG_DEBUG("===== storeTileAB =======\n",module);
 
     auto loadFragAMap = getAffineMap("loadFragA", builder, config);
     auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[1], threadIdx[0], k_inner.getInductionVar()}, 

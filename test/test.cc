@@ -72,7 +72,9 @@ public:
     ss << m_size << "x" << n_size << "x" << k_size << "_";
     ss << m_dtypeA << m_dtypeB << m_dtypeC << "_";
     ss << "TTmn" << m_THREAD_SIZE_M <<"x"<< m_THREAD_SIZE_N << "_";
-    ss << "BTmnk" << m_BLOCK_SIZE_M << "x" << m_BLOCK_SIZE_N << "x" << m_BLOCK_SIZE_K ;
+    ss << "BTmnk" << m_BLOCK_SIZE_M << "x" << m_BLOCK_SIZE_N << "x" << m_BLOCK_SIZE_K << "_" ;
+    ss << "BLmn" << m_BLOCK_LAYOUT_M << "x" << m_BLOCK_LAYOUT_N << "_";
+    ss << "WLmn" << m_WARP_LAYOUT_M << "x" << m_WARP_LAYOUT_N;
     return ss.str();
   }
 };

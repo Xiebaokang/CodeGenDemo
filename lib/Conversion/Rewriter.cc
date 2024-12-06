@@ -12,6 +12,11 @@
 
 namespace KernelCodeGen {
 
+void OpSetDesc(mlir::Operation* op, const std::string& attrValue){
+  mlir::OpBuilder b(op->getContext());
+  op->setAttr("kcg.desc",b.getStringAttr(attrValue));
+}
+
 mlir::AffineExpr shiftAffineExprDim(mlir::MLIRContext* context, mlir::AffineExpr expr, int shift) {
   if (auto dimExpr_ = expr.dyn_cast<mlir::AffineDimExpr>()) {
     return mlir::getAffineDimExpr(dimExpr_.getPosition() + shift, context);
@@ -578,6 +583,8 @@ mlir::affine::AffineForOp Rewriter::read(mlir::Value src, mlir::Value dst, mlir:
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
   // registers is always 1 dim.
   auto loadTimes = dstType.getShape()[0] / width;
+  assert(dstType.getShape()[0] > 0 && "dstType.getShape()[0] <= 0");
+  assert(width > 0 && "width <= 0");
   auto loadBody = [&](mlir::OpBuilder &builder, mlir::Location nestedLoc, mlir::Value iv,
                       mlir::ValueRange iterArgs) {
     mlir::OpBuilder::InsertionGuard nestedGuard(builder);
@@ -589,6 +596,8 @@ mlir::affine::AffineForOp Rewriter::read(mlir::Value src, mlir::Value dst, mlir:
     builder.create<mlir::affine::AffineYieldOp>(builder.getUnknownLoc());
   };
   auto load = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, loadTimes, 1, /*iterArgs=lvm::None*/ mlir::ValueRange({}), loadBody);
+  std::string desc = "Rewriter::read;ldTimes=" + std::to_string(loadTimes) + "_" + std::to_string(width) + "_" + std::to_string(dstType.getShape()[0]);
+  OpSetDesc(load,desc);
   return load;
 }
 
