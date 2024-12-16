@@ -31,13 +31,19 @@ bool KernelCodeGenerator::optimize(mlir::ModuleOp &mod, std::map<std::string, in
 
 
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::string& libsPath, const std::string& gfx_arch) {
+#define FLAG 1
   mlir::PassManager pm(&context);
+  pm.addPass(createAddDebugLogPass());
+  pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createExtractAffineParallelPass());  // affine.parallel 根据内外层，将loopIvs 替换为bid、tid
+#if FLAG
   pm.addPass(createCombineMemrefPass());
   // pm.addPass(createFlattenMemrefPass());
+#endif
   pm.addPass(ReplaceAllocToGetglobalPass());
-  // pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
+#if FLAG
   pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
+#endif
   pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());  // 加入后会导致shm conflict 增加
   pm.addPass(createSymbolDCEPass());
@@ -99,12 +105,16 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createConvertFuncToLLVMPass(funcOptions));               // func -> llvm
   // pm.addPass(createEraseRedundantUnCCastPass());                         // 手动写的去除多余UnrealizedCast
   // pm.addPass(mlir::createReconcileUnrealizedCastsPass());                // 内置去除多余cast的pass
-
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createSymbolDCEPass());
   // pm.addPass(createMallocFuncOpArgTypeI32ToI64Pass());                      // 将malloc 的 func 的函数签名换成 i64，ptrtointOp/callOp跟着换（因为如果强制使用malloci32，后续llvmtranslation报错，llvm malloc只支持i64）
   pm.addPass(createGlobalShmSetZeroPass());
+  pm.addPass(mlir::createLowerGpuOpsToROCDLOpsPass());
+  // pm.addPass(createConvertGPUPrintToLLVMPass());
+  
+  // pm.addPass(mlir::createGpuToLLVMConversionPass());
+
   if (mlir::failed(pm.run(mod))){
     return false;
   }  
@@ -114,10 +124,9 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   // mod.dump();
-  std::string libsPath{"/home/pangyunfei/xushilong/CodeGenDemo/third_party/hip/lib/bitcode"};
   llvm::outs() << " === start mlir =====\n";llvm::outs().flush();mod->dump();
   
-  transforms(mod, context, libsPath, arch);
+  transforms(mod, context, HIP_BITCODE_PATH , arch);
   llvm::outs() << " === after transforms =====\n";llvm::outs().flush();mod->dump();
 
   firstLowering(mod, context);
@@ -134,13 +143,26 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   const int wavesPerEU = 0;
   const std::string gfx_triple{"amdgcn-amd-amdhsa"};
   const std::string gfx_features{""};
-#if 1
+#if 1  // 使用外部mlir调试
+  mlir::MLIRContext testContext;
+  testContext.loadDialect<
+    func::FuncDialect,memref::MemRefDialect,scf::SCFDialect,gpu::GPUDialect,
+    arith::ArithDialect,cf::ControlFlowDialect,LLVM::LLVMDialect,ROCDL::ROCDLDialect
+  >();
+  const char* llvmdialectfileName = "/home/xushilong/CodeGenDemo/ceshiData/kcg/testBadcase.mlir";
+  auto temp = mlir::parseSourceFile<ModuleOp>(llvmdialectfileName,&testContext);
+  auto testmod = temp.get();
+  std::string llvmIR = std::move(translateMLIRToLLVMIR(testmod, target, wavesPerEU));
+#endif
+
+#if 0  // 
   std::string llvmIR = std::move(translateMLIRToLLVMIR(mod, target, wavesPerEU));
   // std::tuple<std::string, std::string> result = translateLLVMIRToHSACO(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
   // return std::get<1>(result);
+#endif
   std::cout << "\n====llvmIR\n" << llvmIR << std::endl;
-#else
 
+#if 0
   // test insert 
   std::ifstream ifs("/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/testLLVMIR.mlir");
   std::stringstream buffer;
@@ -150,6 +172,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   }
   auto llvmIR = buffer.str();
 #endif
+
   return generateAmdgcnAndHsacoFromLLIRFile(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
 }
 

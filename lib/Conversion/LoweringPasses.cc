@@ -1,6 +1,7 @@
 #include "Conversion/LoweringPasses.h"
 #include <dlfcn.h>
 #include <filesystem>
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
 
 using namespace mlir;
 
@@ -11,7 +12,8 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ExtractAffineParallelPass)
 
   void runOnOperation() override {
-    constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
+    // constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
+    constexpr gpu::Dimension dims[] = {gpu::Dimension::y, gpu::Dimension::x};
     auto mod = mlir::dyn_cast<ModuleOp>(getOperation());
     mlir::func::FuncOp kernel = nullptr;
     // 定位 funcop, innerParallel, outerParallel, 两层parallel间的首个op
@@ -668,7 +670,7 @@ struct MallocFuncOpArgTypeI32ToI64Pass : public PassWrapper<MallocFuncOpArgTypeI
 
 };
 
-//  ***弃用*** 没有添加lib仍然可编译
+
 struct AddExternalLibPass : public PassWrapper<AddExternalLibPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AddExternalLibPass)
 
@@ -916,37 +918,43 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
   
   template<typename AllocOrAllocaOp>
   void flattenAllocOp(func::FuncOp &funcOp) {
-    funcOp.walk<WalkOrder::PreOrder>([&](AllocOrAllocaOp op) {
-      auto resType = op.getResult().getType();
-      const auto & resShape = resType.getShape();
+    funcOp.walk<WalkOrder::PreOrder>([&](AllocOrAllocaOp oldOp) {
+      Value result = oldOp->getResult(0);
+      auto resType = mlir::dyn_cast<MemRefType>(result.getType());
+      auto resShape = resType.getShape();  // 每次alloc的shape
+
       int64_t len = 1;
       for(auto d : resShape){
         len *= d;
       }
-      auto b = mlir::OpBuilder(op);
+      SmallVector<Operation *> users;
+      for (auto user : result.getUsers()) {  // collect users
+        users.push_back(user);
+      }
+
+      auto b = mlir::OpBuilder(oldOp);
       auto newType = MemRefType::get({len}, resType.getElementType(), {}, resType.getMemorySpaceAsInt());
-      auto newAllocOp = b.create<AllocOrAllocaOp>(op.getLoc(), newType);
+      auto newAllocOp = b.create<AllocOrAllocaOp>(oldOp.getLoc(), newType);
       newAllocOp.setAlignment(KCG_ALIGNBYTE);
-      op.getResult().replaceAllUsesWith(newAllocOp.getResult());
       SmallVector<Operation *> opToDelete {};
 
       // 替换 user 位置的op
-      for (auto user : newAllocOp.getResult().getUsers()) {
+      for (auto user : users) {
         if (auto loadOp = mlir::dyn_cast<affine::AffineLoadOp>(user)) {
           auto map = moreDimToOneDimMap(loadOp, 0, resShape, loadOp->getContext());
-          mlir::OpBuilder tempb(loadOp);
-          auto newLoadOp = tempb.create<affine::AffineLoadOp>(loadOp.getLoc(), newAllocOp.getResult(), map, loadOp.getMapOperands());
+          b.setInsertionPointAfter(loadOp);
+          auto newLoadOp = b.create<affine::AffineLoadOp>(loadOp.getLoc(), newAllocOp.getResult(), map, loadOp.getMapOperands());
           loadOp.getResult().replaceAllUsesWith(newLoadOp.getResult());
           opToDelete.push_back(loadOp);
         } else if (auto storeOp = mlir::dyn_cast<affine::AffineStoreOp>(user)) {
           auto map = moreDimToOneDimMap(storeOp, 0, resShape, storeOp->getContext());
-          mlir::OpBuilder tempb(storeOp);
-          tempb.create<affine::AffineStoreOp>(storeOp.getLoc(), storeOp.getValue(), newAllocOp.getResult(), map, storeOp.getMapOperands());
+          b.setInsertionPointAfter(storeOp);
+          b.create<affine::AffineStoreOp>(storeOp.getLoc(), storeOp.getValue(), newAllocOp.getResult(), map, storeOp.getMapOperands());
           opToDelete.push_back(storeOp);
         } else if (auto vectorLoadOp = mlir::dyn_cast<affine::AffineVectorLoadOp>(user)) {
           auto map = moreDimToOneDimMap(vectorLoadOp, 0, resShape, vectorLoadOp->getContext());
-          mlir::OpBuilder tempb(vectorLoadOp);
-          auto newVectorLoadOp = tempb.create<affine::AffineVectorLoadOp>(vectorLoadOp.getLoc(), vectorLoadOp.getVectorType(), 
+          b.setInsertionPointAfter(vectorLoadOp);
+          auto newVectorLoadOp = b.create<affine::AffineVectorLoadOp>(vectorLoadOp.getLoc(), vectorLoadOp.getVectorType(), 
                                                               newAllocOp.getResult(), map, vectorLoadOp.getMapOperands());
           vectorLoadOp.getResult().replaceAllUsesWith(newVectorLoadOp.getResult());
           opToDelete.push_back(vectorLoadOp);
@@ -954,8 +962,8 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
 
         } else if (auto vectorStoreOp = mlir::dyn_cast<affine::AffineVectorStoreOp>(user)) {
           auto map = moreDimToOneDimMap(vectorStoreOp, 0, resShape, vectorStoreOp->getContext());
-          mlir::OpBuilder tempb(vectorStoreOp);
-          tempb.create<affine::AffineVectorStoreOp>(vectorStoreOp.getLoc(), vectorStoreOp.getValue(), 
+          b.setInsertionPointAfter(vectorStoreOp);
+          b.create<affine::AffineVectorStoreOp>(vectorStoreOp.getLoc(), vectorStoreOp.getValue(), 
                                             newAllocOp.getResult(), map, vectorStoreOp.getMapOperands());
           opToDelete.push_back(vectorStoreOp);
         }
@@ -963,18 +971,43 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
           assert(false && " KCG Unimplement Cast!!");
         }
       }
-      op.erase();
       for(auto userOp : opToDelete){
         userOp->erase();
       }
+      oldOp.erase();
     });
 
   }
 };
 
+// 添加 gpu.printfop
+struct AddDebugLogPass : public PassWrapper<AddDebugLogPass, OperationPass<ModuleOp>> {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(AddDebugLogPass)
+
+  void runOnOperation() override {
+    auto mod = mlir::dyn_cast<mlir::ModuleOp>(getOperation());
+    mod.walk([&](mlir::func::FuncOp func){
+      auto subOps = func.getOps();
+      for(auto & op : subOps){
+        if(auto desc = op.getAttr("kcg.debug")){
+          // mlir::StringAttr printLog = mlir::dyn_cast<mlir::StringAttr>(desc);
+          // mlir::OpBuilder b(&op);
+          // b.setInsertionPointAfter(&op);
+          // b.create<mlir::gpu::PrintfOp>(op.getLoc(),printLog,mlir::ValueRange());
+        }
+      }
+    });
+  }
+};
+
+// ////////////////////////////////////////////////////////////////////////////
 
 std::unique_ptr<OperationPass<ModuleOp>> createExtractAffineParallelPass() {
   return std::make_unique<ExtractAffineParallelPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> createAddDebugLogPass() {
+  return std::make_unique<AddDebugLogPass>();
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass() {

@@ -1,7 +1,18 @@
 #include "Conversion/Optimizer.h"
 #include <cfloat>
+#include "mlir/Dialect/AMDGPU/IR/AMDGPUDialect.h"
+#include <filesystem>
 
 namespace KernelCodeGen {
+
+void _opSetDbgPrintAttr(mlir::Operation* op, const std::string& attrValue){
+  mlir::OpBuilder b(op->getContext());
+  // auto log = b.getStringAttr(attrValue);
+  // b.setInsertionPointAfter(op);
+  // auto zero = b.create<mlir::arith::ConstantIntOp>(b.getUnknownLoc(),0,32);
+  // b.create<mlir::gpu::PrintfOp>(b.getUnknownLoc(),log,mlir::ValueRange(zero));
+  op->setAttr("kcg.debug",b.getStringAttr(attrValue));
+}
 
 bool MatmulOptimizer::applicable(mlir::ModuleOp& module) {
   clear();
@@ -44,6 +55,31 @@ int64_t smBReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutM, i
   return (warpNum / blockLayoutM) * warpLayoutN;
 }
 
+// mlir::AffineMap getAffineMap_GlobalToShmA(mlir::OpBuilder& builder,std::map<std::string, int> config){
+//   auto dim_tx = builder.getAffineDimExpr(0);
+//   auto dim_ty = builder.getAffineDimExpr(1);
+//   auto dim_by = builder.getAffineDimExpr(2);
+//   auto dim_k_outer = builder.getAffineDimExpr(3);
+//   const int& BM = config[KEY_BLOCK_SIZE_M]; 
+//   const int& BN = config[KEY_BLOCK_SIZE_N]; 
+//   const int& BK = config[KEY_BLOCK_SIZE_K];
+//   const int& TM = config[KEY_THREAD_SIZE_M];
+//   const int& TN = config[KEY_THREAD_SIZE_N];
+//   int64_t blockDimY = BM / TM;  // y轴 thread个数
+//   int64_t blockDimX = BN / TN;  // x轴 thread个数
+//   int64_t nThreadsInBlock =  blockDimY * blockDimX;
+//   bool vectorize = config.count("VECTORIZE_WIDTH") != 0;
+//   int WIDTH = vectorize ? config[KEY_VECTORIZE_WIDTH] : 1;
+//   int nElementsPerThread = BM*BK/nThreadsInBlock;  // Atile 需要每个thread 搬运多少数据
+//   int nReadLoopCount = nElementsPerThread / WIDTH;  // 几次能搬运ok
+//   if(nElementsPerThread < WIDTH){
+//     WIDTH = nElementsPerThread;
+//   }
+//   // tid = ty * blockDimx + tx
+//   auto tid = dim_ty * blockDimX + dim_tx;
+  
+
+// }
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
   auto dim0 = builder.getAffineDimExpr(0);
@@ -54,10 +90,35 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   auto dim5 = builder.getAffineDimExpr(5);
   auto dim6 = builder.getAffineDimExpr(6);
   auto dim7 = builder.getAffineDimExpr(7);
-  int64_t blockDimY = config["BLOCK_SIZE_M"] / config["THREAD_SIZE_M"];
-  int64_t blockDimX = config["BLOCK_SIZE_N"] / config["THREAD_SIZE_N"];
+
+  const int& BM = config[KEY_BLOCK_SIZE_M]; 
+  const int& BN = config[KEY_BLOCK_SIZE_N]; 
+  const int& BK = config[KEY_BLOCK_SIZE_K];
+  const int& TM = config[KEY_THREAD_SIZE_M];
+  const int& TN = config[KEY_THREAD_SIZE_N];
+  int64_t blockDimY = BM/TM;
+  int64_t blockDimX = BN/TN;
+  int nThreads = blockDimX * blockDimY;
+
   bool vectorize = config.count("VECTORIZE_WIDTH") != 0;
-  int width = vectorize ? config["VECTORIZE_WIDTH"] : 1;
+  int width = vectorize ? config[KEY_VECTORIZE_WIDTH] : 1;
+
+  int nLoopsLoadTileA = BM * BK / nThreads / width;
+  int nLoopsLoadTileB = BN * BK / nThreads / width;
+  if (mapIdentifier == "loadTileA" 
+  || mapIdentifier == "storeTileA" 
+  // || mapIdentifier == "loadFragA"
+  )
+  {
+    width = nLoopsLoadTileA < 1 ? (BM * BK / nThreads) : width;
+  }
+  if (mapIdentifier == "loadTileB" 
+  || mapIdentifier == "storeTileB" 
+  // || mapIdentifier == "loadFragB"
+  )
+  {
+    width = nLoopsLoadTileB < 1 ? (BN * BK / nThreads) : width;
+  }
 
   std::vector<int64_t> warpOrg {config["BLOCK_LAYOUT_M"], config["BLOCK_LAYOUT_N"]};  
   std::vector<int64_t> threadOrg {config["WARP_LAYOUT_M"], config["WARP_LAYOUT_N"]};
@@ -66,20 +127,44 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     // dims are:[dim0, dim1, dim2, dim3, dim4]
     // operands are: [threadIdx.y, threadIdx.x, blockIdx.y, k_outer, iv]
     // iv represent a block copy for iv times. 
-    auto threadIdExpr = dim0 * blockDimX + dim1;  // ty * blockDimx + tx
-    auto virtaulThreadIxExpr = threadIdExpr + dim4 * blockDimY * blockDimX;
-    auto M_Offset = virtaulThreadIxExpr.floorDiv(static_cast<uint64_t>(config["BLOCK_SIZE_K"]) / width);
-    auto K_Offset = virtaulThreadIxExpr % (static_cast<uint64_t>(config["BLOCK_SIZE_K"]) / width); 
-    auto M_Base = dim2 * config["BLOCK_SIZE_M"];
-    auto K_Base = dim3;
+    auto& _ty = dim0;
+    auto& _tx = dim1;
+    auto& _by = dim2;
+    auto& _kouter = dim3;
+    auto& _iv = dim4;
+    auto threadIdExpr = _ty * blockDimX + _tx;  // ty * blockDimx + tx
+
+#if 1
+    auto virtaulThreadIxExpr = threadIdExpr + _iv * blockDimY * blockDimX;
+
+    auto M_Offset = virtaulThreadIxExpr.floorDiv((uint64_t)(BK / width));
+    auto K_Offset = virtaulThreadIxExpr % (static_cast<uint64_t>(BK) / width); 
+    auto M_Base = _by * BM;
+    auto K_Base = _kouter;
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(M_Offset + M_Base);
     exprs.push_back(K_Offset * width + K_Base);
     return mlir::AffineMap::get(/*dimCount*/5, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+#else
+    int nLoopUbs = BK * BM / nThreads / width;  // 搬运几次
+    if(nLoopUbs < 1){
+      width = BK * BM / nThreads;
+    }
+    auto iM = (threadIdExpr * width).floorDiv(BM);
+    auto iK = threadIdExpr * width % BM;
+    auto K_Base = _kouter;
+    auto M_Base = _by * BM;
+
+    llvm::SmallVector<mlir::AffineExpr> exprs;
+    exprs.push_back(iM + M_Base);
+    exprs.push_back(iK + K_Base);
+    return mlir::AffineMap::get(/*dimCount*/5, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+#endif
   } else if (mapIdentifier == "loadTileB") {
     // dims are:[dim0, dim1, dim2, dim3, dim4]
     // operands are: [threadIdx.y, threadIdx.x, k_outer, blockIdx.x, iv]
     auto threadIdExpr = dim0 * blockDimX + dim1;  // ty * blockDimx + tx
+#if 1
     auto virtaulThreadIxExpr = threadIdExpr + dim4 * blockDimY * blockDimX;
     auto K_Offset = virtaulThreadIxExpr.floorDiv(static_cast<uint64_t>(config["BLOCK_SIZE_N"]) / width);
     auto N_Offset = virtaulThreadIxExpr % (static_cast<uint64_t>(config["BLOCK_SIZE_N"]) / width); 
@@ -88,16 +173,42 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(K_Offset + K_Base);
     exprs.push_back(N_Offset * width + N_Base);
+#else
+    auto& _ty = dim0;
+    auto& _tx = dim1;
+    auto& _kouter = dim2;
+    auto& _bx = dim3;
+    auto tid = _ty * blockDimX + _tx;  // ty * blockDimx + tx
+    int nLoopUbs = BK * BN / nThreads / width;  // 搬运几次
+    if(nLoopUbs < 1){
+      width = BK * BN / nThreads;
+    }
+    auto iK = (tid * width).floorDiv(BN);
+    auto iN = tid * width % BN;
+    auto K_Base = _kouter;
+    auto N_Base = _bx * BN;
+
+    llvm::SmallVector<mlir::AffineExpr> exprs;
+    exprs.push_back(iK + K_Base);
+    exprs.push_back(iN + N_Base);
+#endif
+
     return mlir::AffineMap::get(/*dimCount*/5, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "storeTileA") {
     // dims are:[dim0, dim1, dim2, dim3]
     // operands are: [threadIdx.y, threadIdx.x, iv, ivInVector]
-    auto threadIdExpr = dim0 * blockDimX + dim1;
-    auto virtaulThreadIxExpr = threadIdExpr + dim2 * blockDimY * blockDimX;
-    auto M_Offset = virtaulThreadIxExpr.floorDiv(static_cast<uint64_t>(config["BLOCK_SIZE_K"]) / width);
-    auto K_Offset = virtaulThreadIxExpr % (static_cast<uint64_t>(config["BLOCK_SIZE_K"]) / width);
+    auto& ty = dim0;
+    auto& tx = dim1;
+    auto& iv = dim2;
+    auto& ivInVector = dim3;
+
+    auto threadIdExpr = ty * blockDimX + tx;
+    auto virtaulThreadIxExpr = threadIdExpr + iv * nThreads;
+    auto lineThreadDeal = static_cast<uint64_t>(config["BLOCK_SIZE_K"]) / width;
+    auto M_Offset = virtaulThreadIxExpr.floorDiv(lineThreadDeal);
+    auto K_Offset = virtaulThreadIxExpr % lineThreadDeal;
     llvm::SmallVector<mlir::AffineExpr> exprs;
-    exprs.push_back(K_Offset * width + dim3);
+    exprs.push_back(K_Offset * width + ivInVector);
     exprs.push_back(M_Offset);
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "storeTileB") {
@@ -114,7 +225,10 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   } else if (mapIdentifier == "loadFragA") {
     // dims are:[dim0, dim1, dim2, dim3]
     // operands are: [threadIdx.y, threadIdx.x, k_inner, iv]
-    auto threadIdExpr = dim0 * blockDimX + dim1;
+    auto& ty = dim0;
+    auto& tx = dim1;
+
+    auto threadIdExpr = ty * blockDimX + tx;
     auto warpId = threadIdExpr.floorDiv(static_cast<uint64_t>(config["WARP_SIZE"]));
     auto laneId = threadIdExpr % static_cast<uint64_t>(config["WARP_SIZE"]);
 
@@ -163,6 +277,8 @@ void MatmulOptimizer::_opSetDescription(mlir::Operation* op, const std::string& 
   mlir::OpBuilder b(op->getContext());
   op->setAttr("kcg.desc",b.getStringAttr(attrValue));
 }
+
+
 
 void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) {
   mlir::OpBuilder builder(module);
@@ -227,38 +343,43 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loadTileAMap = getAffineMap("loadTileA", builder, config);
     // threadIdx[0], threadIdx[1] 两者先后交换，即可改变 tx ty 的方向
     // shm->temp
-    auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[1], threadIdx[0], blockIdx[1], k_outer.getInductionVar()}, 
+    auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
                       (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
                       k_outer, Position::begin);
     auto loadTileBMap = getAffineMap("loadTileB", builder, config);
     auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
-                      {threadIdx[1], threadIdx[0], k_outer.getInductionVar(), blockIdx[0]}, 
+                      {threadIdx[0], threadIdx[1], k_outer.getInductionVar(), blockIdx[1]}, 
                       (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
                       loadTileA, Position::after);
     // module.dump();
     LOG_DEBUG("===== shm->temp =======\n",module);
 
     auto storeTileAMap = getAffineMap("storeTileA", builder, config);
-    auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[1], threadIdx[0]}, 
-                        config["VECTORIZE_WIDTH"], loadTileB, Position::after);
+    // auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[1], threadIdx[0]}, 
+    auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[0], threadIdx[1]}, 
+                        (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+                        loadTileB, Position::after);
     auto storeTileBMap = getAffineMap("storeTileB", builder, config);
-    auto storeTileB = Rewriter::write(tileB, smB, storeTileBMap, {threadIdx[1], threadIdx[0]}, 
-                                config["VECTORIZE_WIDTH"], storeTileA, Position::after);
+    auto storeTileB = Rewriter::write(tileB, smB, storeTileBMap, {threadIdx[0], threadIdx[1]}, 
+                        (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
+                        storeTileA, Position::after);
     auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
     auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
 
     LOG_DEBUG("===== storeTileAB =======\n",module);
 
     auto loadFragAMap = getAffineMap("loadFragA", builder, config);
-    auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[1], threadIdx[0], k_inner.getInductionVar()}, 
+    auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
                       config["VECTORIZE_WIDTH"], k_inner, Position::begin);
+    _opSetDescription(loadFragA,"loadFragA");
     auto loadFragBMap = getAffineMap("loadFragB", builder, config);
-    auto loadFragB = Rewriter::read(smB, fragB, loadFragBMap, {threadIdx[1], threadIdx[0], k_inner.getInductionVar()}, 
+    auto loadFragB = Rewriter::read(smB, fragB, loadFragBMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
                       config["VECTORIZE_WIDTH"], loadFragA, Position::after);
+    _opSetDescription(loadFragB,"loadFragB");
 
     Rewriter::cache_read(k_inner, A, fragA, getAffineMap("cacheReadA", builder, config), {m_inner.getInductionVar()});
     Rewriter::cache_read(k_inner, B, fragB, getAffineMap("cacheReadB", builder, config), {n_inner.getInductionVar()});
-    // module.dump();
+    LOG_DEBUG("===== load frag & cache_read =======\n",module);
 
     auto writeCbody = Rewriter::get_write(blockLevel, C);
     assert(writeCbody.size() == 1);
@@ -273,7 +394,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     _opSetDescription(n_inner_0,"n_inner_0");
     _opSetDescription(n_inner_1,"n_inner_1");
     Rewriter::cache_write(m_inner_0, C, C, getAffineMap("cacheWriteC", builder, config), 
-                          {threadIdx[1], threadIdx[0], blockIdx[1], blockIdx[0],
+                          {threadIdx[0], threadIdx[1], blockIdx[0], blockIdx[1],
                            m_inner_0.getInductionVar(),n_inner_0.getInductionVar(),
                            m_inner_1.getInductionVar(),n_inner_1.getInductionVar()
                           });
@@ -331,7 +452,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       if (times > threshold) return false;
       return true;
     });
-    // module.dump();
+    LOG_DEBUG("===== after applyOptimizer =======\n",module);
   }
 }
 

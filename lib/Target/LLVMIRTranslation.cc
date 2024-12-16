@@ -254,7 +254,7 @@ static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
         // static const auto runtime_path =
         //     this_library_path.parent_path().parent_path() / "third_party" / "cuda" /
         //     "lib" / "libdevice.10.bc";
-    const std::string runtime_path = "/home/pangyunfei/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc" ;
+    const std::string runtime_path = "/home/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc" ;
     if (fs::exists(runtime_path)) {
       // externLibs.try_emplace(libdevice, runtime_path.string());
       externLibs.try_emplace(libdevice, runtime_path);
@@ -271,7 +271,7 @@ static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
       //                                          .parent_path() /
       //                                      "python" / "triton" / "third_party" /
       //                                      "cuda" / "lib" / "libdevice.10.bc";
-      static std::string compiletime_path = "/home/pangyunfei/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc";
+      static std::string compiletime_path = "/home/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc";
       if (!fs::exists(compiletime_path)) {
         std::string error_msg = "Can't find libdevice at neither " + runtime_path + " nor " + compiletime_path;
         llvm::report_fatal_error(error_msg.c_str());
