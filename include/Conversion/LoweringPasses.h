@@ -9,6 +9,10 @@ namespace KernelCodeGen {
 
 static const int INDEX_BIT_WIDTH = 32;
 
+std::unique_ptr<OperationPass<ModuleOp>> createConvertGPUPrintToLLVMPass();
+
+std::unique_ptr<OperationPass<ModuleOp>> createAddDebugLogPass();
+
 std::unique_ptr<OperationPass<ModuleOp>> createExtractAffineParallelPass();
 
 std::unique_ptr<OperationPass<ModuleOp>> createParallelToROCDLPass();
