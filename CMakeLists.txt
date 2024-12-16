@@ -19,6 +19,7 @@ add_compile_options(
   )
 #############################
 
+set(HIP_BITCODE_PATH ${CMAKE_SOURCE_DIR}/third_party/hip/bitcode)
 configure_file(config.h.in ${CMAKE_SOURCE_DIR}/include/config.h)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   find_package(MLIR REQUIRED CONFIG PATHS ./cmake)
