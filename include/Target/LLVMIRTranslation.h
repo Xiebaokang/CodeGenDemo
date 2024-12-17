@@ -1,7 +1,7 @@
 #ifndef _LLVMIRTranslation_h_
 #define _LLVMIRTranslation_h_
 
-#include "utils.h"
+#include "Common/Utils.h"
 
 namespace KernelCodeGen {
 

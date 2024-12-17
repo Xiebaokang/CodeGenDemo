@@ -5,21 +5,28 @@ project(KernelCodeGen LANGUAGES CXX C)    # delete CUDA
 set(CMAKE_BUILD_WITH_INSTALL_NAME_DIR ON)
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
-##### User config ###########
+############################ User config #####################
 set(LLVM_INSTALL_DIR "~/llvm-install")
 set(DEBUG_AMDGCN_OUTPUT_PATH "/home/xushilong/CodeGenDemo/test.amdgcn") 
 set(USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld") 
 option(COMPILE_AS_PYMODULE "Compile kcg_compiler to DynamicLib or Exe" ON)
 set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/triton_rocm")
+# close some warnings
 add_compile_options(
   -Wno-unused-function
   -Wno-unused-variable
-  -Wunused-result
-  -Wsign-compare
+  -Wno-unused-result
+  -Wno-sign-compare
+  -Wno-unused-but-set-variable
+  -Wno-return-local-addr
+  -Wno-parentheses
+  -Wno-cast-qual
   )
-#############################
-
+##########################################################################
+  
+set(BC_DUMP_PATH ${CMAKE_SOURCE_DIR}/dump)
 set(HIP_BITCODE_PATH ${CMAKE_SOURCE_DIR}/third_party/hip/bitcode)
+# generate config.h with user-config variables
 configure_file(config.h.in ${CMAKE_SOURCE_DIR}/include/config.h)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   find_package(MLIR REQUIRED CONFIG PATHS ./cmake)
@@ -70,5 +77,5 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 
 # add_subdirectory(include)
-add_subdirectory(lib)
-add_subdirectory(test)
+add_subdirectory(src/lib)
+add_subdirectory(src)

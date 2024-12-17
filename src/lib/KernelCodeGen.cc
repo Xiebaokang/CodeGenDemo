@@ -4,6 +4,9 @@
 #include <filesystem>
 #include <fstream>
 #include "mlir/Dialect/Affine/Passes.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "config.h"
 
 namespace KernelCodeGen {
 
@@ -143,7 +146,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   const int wavesPerEU = 0;
   const std::string gfx_triple{"amdgcn-amd-amdhsa"};
   const std::string gfx_features{""};
-#if 1  // 使用外部mlir调试
+#if 0  // 使用外部mlir调试
   mlir::MLIRContext testContext;
   testContext.loadDialect<
     func::FuncDialect,memref::MemRefDialect,scf::SCFDialect,gpu::GPUDialect,
@@ -155,7 +158,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   std::string llvmIR = std::move(translateMLIRToLLVMIR(testmod, target, wavesPerEU));
 #endif
 
-#if 0  // 
+#if 1  // 
   std::string llvmIR = std::move(translateMLIRToLLVMIR(mod, target, wavesPerEU));
   // std::tuple<std::string, std::string> result = translateLLVMIRToHSACO(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
   // return std::get<1>(result);

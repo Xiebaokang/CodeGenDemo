@@ -1,16 +1,60 @@
-#include "Conversion/Rewriter.h"
-
+#include "Conversion/General/Rewriter.h"
 #include "llvm/ADT/ArrayRef.h"
-
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-
 #include "mlir/IR/PatternMatch.h"
-
+#include "mlir/Pass/PassManager.h"
 #include <algorithm>
 #include <map>
 #include <cmath>
 
 namespace KernelCodeGen {
+namespace Rewriter {
+
+mlir::Value _inner_alloc_buffer(mlir::OpBuilder &builder, mlir::MemRefType &type)
+{
+  if (type.getMemorySpaceAsInt() == int(KernelCodeGen::MemorySpace::local)){
+    return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
+  }
+  return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), type);
+}
+
+mlir::OpBuilder getBuilder(mlir::affine::AffineForOp op, Position pos){
+  switch (pos){
+  case Position::after:
+  {
+    mlir::OpBuilder builder(op->getContext());
+    builder.setInsertionPointAfter(op);
+    return builder;
+  }
+  case Position::before:
+  {
+    mlir::OpBuilder builder(op);
+    return builder;
+  }
+  case Position::begin:
+  {
+    return mlir::OpBuilder::atBlockBegin(op.getBody());
+  }
+  case Position::end:
+  {
+    return mlir::OpBuilder::atBlockEnd(op.getBody());
+  }
+  default:
+    assert(false);
+  }
+}
+
+std::vector<mlir::Value> getParallelIdx(mlir::affine::AffineParallelOp parallelLevel){
+  auto dim = parallelLevel.getNumDims();
+  std::vector<mlir::Value> idxes;
+  auto ivs = parallelLevel.getIVs();
+  for (auto iv : ivs)
+  {
+    idxes.push_back(iv);
+  }
+  return idxes;
+}
+
 
 void OpSetDesc(mlir::Operation* op, const std::string& attrValue){
   mlir::OpBuilder b(op->getContext());
@@ -114,7 +158,7 @@ int replaceIndexWithExpr(mlir::Value oldIv, std::vector<mlir::Value>& newIvs, Af
   return operands.size();
 }
 
-std::vector<mlir::affine::AffineForOp> Rewriter::split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t>&& factors) {
+std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t>&& factors) {
   auto upperBoundsVector = factors;
   factors.insert(factors.begin(), 1);
   assert(factors.size() == num_output);
@@ -259,7 +303,7 @@ mlir::Block* getClostScopeOp(mlir::Operation* op) {
   }
 }
 
-mlir::Value Rewriter::bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp>& loops) {
+mlir::Value bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp>& loops) {
   auto contain = [&](mlir::affine::AffineForOp A, mlir::affine::AffineForOp B) {  // A 包括 B
     if (A == B) return false;
     bool result = false;
@@ -461,7 +505,7 @@ void swap(mlir::affine::AffineForOp outer, mlir::affine::AffineForOp inner) {
   builder.create<mlir::affine::AffineYieldOp>(builder.getUnknownLoc());
 }
 
-void Rewriter::reorder(const std::vector<mlir::affine::AffineForOp>& loops) {
+void reorder(const std::vector<mlir::affine::AffineForOp>& loops) {
 
   // auto loops = loops_;
   // bufferizeLoopCarryVar(loops);
@@ -527,7 +571,7 @@ void Rewriter::reorder(const std::vector<mlir::affine::AffineForOp>& loops) {
 }
 
 // op in forOps must be perfect nested loops.
-mlir::affine::AffineParallelOp Rewriter::parallel(const std::vector<mlir::affine::AffineForOp>& forOps) {
+mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp>& forOps) {
   // X, Y, Z
   assert(forOps.size() <= 3);
   llvm::SmallVector<mlir::AffineMap> lbMaps;
@@ -573,7 +617,7 @@ mlir::affine::AffineParallelOp Rewriter::parallel(const std::vector<mlir::affine
 }
 
 // dst is register.
-mlir::affine::AffineForOp Rewriter::read(mlir::Value src, mlir::Value dst, mlir::AffineMap map, 
+mlir::affine::AffineForOp read(mlir::Value src, mlir::Value dst, mlir::AffineMap map, 
                                    llvm::SmallVector<mlir::Value> operands, int64_t width,
                                    mlir::affine::AffineForOp compute_at, Position pos) {
   auto dim0 = mlir::getAffineDimExpr(0, compute_at.getContext());
@@ -601,7 +645,7 @@ mlir::affine::AffineForOp Rewriter::read(mlir::Value src, mlir::Value dst, mlir:
   return load;
 }
 
-mlir::affine::AffineForOp Rewriter::read(mlir::OpBuilder& builder, mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, int64_t width) {
+mlir::affine::AffineForOp read(mlir::OpBuilder& builder, mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, int64_t width) {
   auto dim0 = builder.getAffineDimExpr(0);
   auto dstMap = mlir::AffineMap::get(/*dimCount*/1, 0, llvm::ArrayRef<mlir::AffineExpr>(dim0 * width), builder.getContext());
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
@@ -621,7 +665,7 @@ mlir::affine::AffineForOp Rewriter::read(mlir::OpBuilder& builder, mlir::Value s
 }
 
 // src is register
-mlir::affine::AffineForOp Rewriter::write(mlir::Value src, mlir::Value dst, mlir::AffineMap map, 
+mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map, 
                                    llvm::SmallVector<mlir::Value> operands, int64_t width,
                                    mlir::affine::AffineForOp compute_at, Position pos) {
   auto dimsNum = map.getNumDims();
@@ -685,7 +729,7 @@ mlir::affine::AffineForOp Rewriter::write(mlir::Value src, mlir::Value dst, mlir
 }
 
 // src is register
-mlir::affine::AffineForOp Rewriter::write(mlir::OpBuilder& builder, mlir::Value src, mlir::Value dst, 
+mlir::affine::AffineForOp write(mlir::OpBuilder& builder, mlir::Value src, mlir::Value dst, 
     mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, int64_t width) {
   auto dimsNum = map.getNumDims();
   auto dim0 = builder.getAffineDimExpr(0);
@@ -728,12 +772,12 @@ mlir::affine::AffineForOp Rewriter::write(mlir::OpBuilder& builder, mlir::Value 
   return store;
 }
 
-mlir::gpu::BarrierOp Rewriter::barrier(mlir::affine::AffineForOp compute_at, Position pos) {
+mlir::gpu::BarrierOp barrier(mlir::affine::AffineForOp compute_at, Position pos) {
   auto builder = getBuilder(compute_at, pos);
   return builder.create<mlir::gpu::BarrierOp>(builder.getUnknownLoc());
 }
 
-void Rewriter::cache_read(mlir::affine::AffineForOp scope, mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands) {
+void cache_read(mlir::affine::AffineForOp scope, mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands) {
   scope.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineLoadOp load) {
     if (load.getMemref() != src) return;
     mlir::OpBuilder builder(load);
@@ -743,7 +787,7 @@ void Rewriter::cache_read(mlir::affine::AffineForOp scope, mlir::Value src, mlir
   });
 }
 
-void Rewriter::cache_write(mlir::affine::AffineForOp scope, mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands) {
+void cache_write(mlir::affine::AffineForOp scope, mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands) {
   scope.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineStoreOp store) {
     if (store.getMemref() != src) return;
     mlir::OpBuilder builder(store);
@@ -753,7 +797,7 @@ void Rewriter::cache_write(mlir::affine::AffineForOp scope, mlir::Value src, mli
 }
 
 ///TODO: two level vector.
-std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::get_write(mlir::affine::AffineParallelOp parallelLevel, mlir::Value dst) {
+std::vector<std::vector<mlir::affine::AffineForOp>> get_write(mlir::affine::AffineParallelOp parallelLevel, mlir::Value dst) {
   std::vector<std::vector<mlir::affine::AffineForOp>> results;
   std::vector<mlir::affine::AffineStoreOp> stores;
   parallelLevel.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineStoreOp store) {
@@ -774,7 +818,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::get_write(mlir::af
   return results;
 }
 
-mlir::affine::AffineForOp Rewriter::vectorize(mlir::affine::AffineForOp readOrWrite, int64_t width) {
+mlir::affine::AffineForOp vectorize(mlir::affine::AffineForOp readOrWrite, int64_t width) {
   int64_t step = readOrWrite.getStep().getLimitedValue();
   int64_t ub = readOrWrite.getConstantUpperBound();
   int64_t lb = readOrWrite.getConstantLowerBound();
@@ -798,7 +842,7 @@ mlir::affine::AffineForOp Rewriter::vectorize(mlir::affine::AffineForOp readOrWr
   return readOrWrite;
 }
 
-std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vector<mlir::affine::AffineForOp> readBodys, mlir::Value& buffer, mlir::affine::AffineForOp compute_at) {
+std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::affine::AffineForOp> readBodys, mlir::Value& buffer, mlir::affine::AffineForOp compute_at) {
 
   std::vector<std::vector<mlir::affine::AffineForOp>> results;
 
@@ -1189,7 +1233,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> Rewriter::pipeline(std::vect
   return results;
 }
 
-void Rewriter::detach_last_loop(mlir::affine::AffineForOp forOp) {
+void detach_last_loop(mlir::affine::AffineForOp forOp) {
   auto step = forOp.getStep().getLimitedValue();
   auto ub = forOp.getConstantUpperBound();
   forOp.setConstantUpperBound(ub - step);
@@ -1222,7 +1266,7 @@ void Rewriter::detach_last_loop(mlir::affine::AffineForOp forOp) {
 
 }
 
-void Rewriter::schedule(mlir::Operation* srcOp, mlir::Operation* dstOp, Position pos) {
+void schedule(mlir::Operation* srcOp, mlir::Operation* dstOp, Position pos) {
   mlir::OpBuilder builder(dstOp->getContext());
   switch (pos) {
     case Position::after: {
@@ -1282,7 +1326,7 @@ void replaceOperands(mlir::Operation* op, mlir::Value src, mlir::Value dst) {
   }
 }
 
-void Rewriter::extract_loop(mlir::Operation* srcOp, mlir::affine::AffineForOp forOp, int64_t iteration) {
+void extract_loop(mlir::Operation* srcOp, mlir::affine::AffineForOp forOp, int64_t iteration) {
   mlir::OpBuilder builder(forOp->getContext());
   builder.setInsertionPoint(forOp);
   mlir::IRMapping mapper;
@@ -1435,7 +1479,7 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> TakeOffTrueIfPass() {
   return std::make_unique<TakeOffTrueIf>();
 }
 
-void Rewriter::take_off_true_if(mlir::ModuleOp module) {
+void take_off_true_if(mlir::ModuleOp module) {
   mlir::PassManager pm(module.getContext());
   pm.addPass(TakeOffTrueIfPass());
   if (mlir::failed(pm.run(module))) {
@@ -1500,7 +1544,7 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> DeleteFalseIfPass() {
   return std::make_unique<DeleteFalseIf>();
 }
 
-void Rewriter::delete_false_if(mlir::ModuleOp module) {
+void delete_false_if(mlir::ModuleOp module) {
   mlir::PassManager pm(module.getContext());
   pm.addPass(DeleteFalseIfPass());
   if (mlir::failed(pm.run(module))) {
@@ -1575,7 +1619,7 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> UnrollAffineForPass(mlir::f
   return std::make_unique<UnrollAffineFor>(unrollCheckFn);
 }
 
-void Rewriter::unroll(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn) {
+void unroll(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn) {
 
   mlir::PassManager pm(module.getContext());
   pm.addPass(UnrollAffineForPass(unrollCheckFn));
@@ -1604,7 +1648,7 @@ std::unique_ptr<mlir::OperationPass<mlir::ModuleOp>> UnrollAttributePass(mlir::f
   return std::make_unique<UnrollAttribute>(unrollCheckFn);
 }
 
-void Rewriter::unrollAttribute(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn) {
+void unrollAttribute(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn) {
 
   mlir::PassManager pm(module.getContext());
   pm.addPass(UnrollAttributePass(unrollCheckFn));
@@ -1614,7 +1658,7 @@ void Rewriter::unrollAttribute(mlir::ModuleOp module, mlir::function_ref<bool(ml
   return;
 }
 
-void Rewriter::change_double_buffer(mlir::affine::AffineForOp scope, mlir::Value buffer) {
+void change_double_buffer(mlir::affine::AffineForOp scope, mlir::Value buffer) {
   scope.walk<mlir::WalkOrder::PostOrder>([&](mlir::affine::AffineVectorLoadOp load) {
     auto mem = load.getMemref();
     if (mem == buffer) {
@@ -1645,4 +1689,5 @@ void Rewriter::change_double_buffer(mlir::affine::AffineForOp scope, mlir::Value
   
 }
 
-}
+} // rewriter
+} // kernelcodegen

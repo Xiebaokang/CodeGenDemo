@@ -28,11 +28,12 @@ namespace KernelCodeGen
 
     KernelCodeGenerator() = delete;
 
+    
     template <typename OperatorType, typename... Args> 
     mlir::ModuleOp create(Args &&...args) {
       mlir::OpBuilder builder(&context);
       mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
-      OperatorType::build(module, std::forward<Args>(args)...);
+      OperatorType::buildNaiveExpress(module, std::forward<Args>(args)...);
       return module;
     }
 

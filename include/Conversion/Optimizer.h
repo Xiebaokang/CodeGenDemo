@@ -1,10 +1,9 @@
-#pragma once
+#ifndef _Optimizer_h_
+#define _Optimizer_h_
 
 #include "Analysis/Analyzer.h"
-#include "Conversion/Rewriter.h"
-// #include "Frontend/Operators.h"
-
-#include "utils.h"
+#include "Conversion/General/Rewriter.h"
+#include "Common/Utils.h"
 
 #include <unordered_map>
 
@@ -55,8 +54,8 @@ struct MatmulOptimizer : Optimizer {
   // loopM->[A, B, C]
   std::map<mlir::func::FuncOp, MemoryBuffer, CompareFunc> matmulBuffers;
   
-  // private method
-  void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
 };
 
-}
+}  // KernelCodeGen
+
+#endif // _Optimizer_h_

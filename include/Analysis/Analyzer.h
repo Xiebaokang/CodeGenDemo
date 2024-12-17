@@ -1,7 +1,7 @@
-#pragma once
+#ifndef _Analyzer_h_
+#define _Analyzer_h_
 
-#include "utils.h"
-
+#include "Common/Utils.h"
 #include <vector>
 
 namespace KernelCodeGen {
@@ -40,4 +40,6 @@ struct Analyzer {
   static int getThreadsPerCTA(mlir::ModuleOp module); 
 };
 
-}
+}  // KernelCodeGen
+
+#endif  // _Analyzer_h_

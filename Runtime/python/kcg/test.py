@@ -14,9 +14,9 @@ from kcg.KCGCompiler import KCGCompiler
 # import pymlir
 
 ############### User config ###############
-m_len=256  # 16 blocks
-n_len=32  # 16 blocks
-k_len=8   # 8 blocks
+m_len=1024  # 16 blocks
+n_len=1024  # 16 blocks
+k_len=1024   # 8 blocks
 normal_case = False
 
 def case_normal_0(kp_matmul: KernelArgMatmul) :

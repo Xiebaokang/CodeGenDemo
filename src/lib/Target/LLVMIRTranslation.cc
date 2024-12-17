@@ -28,7 +28,26 @@
 #include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
-#include "utils.h"
+
+#include "mlir/Target/LLVMIR/Dialect/All.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"
+#include "mlir/Target/LLVMIR/Export.h"
+#include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
+
+#include "Common/Utils.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorOr.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
+
 
 namespace {
 using namespace llvm;
@@ -76,7 +95,7 @@ static std::function<Error(Module *)> makeOptimizingPipeline(unsigned optLevel, 
 
     PassBuilder pb(targetMachine, tuningOptions);
 
-    std::string pluginFile = KernelCodeGen::getenv("AMDGCN_INSTRUMENTATION_LIB");
+    std::string pluginFile = KernelCodeGen::tools::getenv("AMDGCN_INSTRUMENTATION_LIB");
     if (!pluginFile.empty()) {
         llvm::errs() << "Adding AMDGCN instrumentation pass to Triton pipeline" << "\n";
         auto passPlugin = llvm::PassPlugin::Load(pluginFile);
@@ -173,15 +192,10 @@ static void amendLLVMFunc(llvm::Function *func, const NVVMMetadata &metadata,
   }
 }
 
-
 static void extractNVVMMetadata(mlir::ModuleOp module, llvm::DenseMap<llvm::StringRef, NVVMMetadata> *dic) {
-  // llvm::outs() << "extractNVVMMetadata[1]\n";
-  // llvm::outs().flush();
   for (auto op : module.getOps<mlir::LLVM::LLVMFuncOp>()) {
     NVVMMetadata meta;
-
     bool hasMetadata{};
-
     // maxntid
     if (auto attr = op->getAttrOfType<mlir::ArrayAttr>("nvvm.maxntid")) {
       llvm::transform(attr.getAsValueRange<mlir::IntegerAttr>(),
@@ -191,17 +205,13 @@ static void extractNVVMMetadata(mlir::ModuleOp module, llvm::DenseMap<llvm::Stri
     }
 
     // kernel
-    if (op->hasAttr("nvvm.kernel")) {
-      // llvm::outs() << "[D] is Kernel";
-      // llvm::outs().flush();
+    if (op->hasAttr(AttrKernelFunc)) {
       meta.isKernel = true;
       hasMetadata = true;
     }
 
     if (hasMetadata){
       dic->try_emplace(op.getNameAttr().strref(), std::move(meta));
-      // llvm::outs() << " add meta: " << op.getNameAttr().strref() << "\n"; 
-      // llvm::outs().flush();
     }
   }
 }
@@ -235,7 +245,7 @@ static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
   if (!funcs.empty()) {
     static const std::string libdevice = "libdevice";
         // first search for environmental path
-    std::string env_path = KernelCodeGen::getenv("TRITON_LIBDEVICE_PATH");
+    std::string env_path = KernelCodeGen::tools::getenv("TRITON_LIBDEVICE_PATH");
     if (!env_path.empty()) {
       externLibs.try_emplace(libdevice, env_path);
       return externLibs;

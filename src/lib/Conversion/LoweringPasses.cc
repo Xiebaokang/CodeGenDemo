@@ -3,6 +3,38 @@
 #include <filesystem>
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 
+#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
+#include "mlir/Conversion/GPUCommon/GPUCommonPass.h"
+#include "mlir/Conversion/GPUToNVVM/GPUToNVVMPass.h"
+#include "mlir/Conversion/SCFToGPU/SCFToGPUPass.h"
+
+#include "mlir/Transforms/Passes.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+
+// lowering
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
+#include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/IR/BuiltinDialect.h"
+#include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallVector.h"
+#include "mlir/Conversion/Passes.h.inc"
+#include "config.h"
+
+// conversion
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+
+
+
 using namespace mlir;
 
 namespace KernelCodeGen {
@@ -469,7 +501,6 @@ struct AffineFullUnrollPass : public PassWrapper<AffineFullUnrollPass, Operation
           }
           else if(unrollFactor >= 1){
             auto ret = affine::loopUnrollJamByFactor(forOp,unrollFactor);
-            // auto ret = affine::loopUnrollByFactor(forOp,unrollFactor);
             if(failed(ret)){
               return signalPassFailure();
             }
@@ -551,9 +582,6 @@ struct SetShmSizeZeroPass : public PassWrapper<SetShmSizeZeroPass, OperationPass
           // std::string type_ = dataflowTypeAttr.getValue().str();
           for (auto user : op.getResult().getUsers()) {
             if (auto getptr = mlir::dyn_cast<LLVM::GEPOp>(user)) {
-          //     auto builder = mlir::OpBuilder(getptr);
-          //     auto type = LLVM::LLVMPointerType::get(getDType(builder, type_), ptr.getAddressSpace());
-          //     auto castOp = builder.create<LLVM::BitcastOp>(getptr.getLoc(), type, op.getResult());
               getptr.replaceAllUsesWith(op.getResult());
               gtps.push_back(user);
             }

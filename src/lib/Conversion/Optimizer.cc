@@ -273,10 +273,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   }
 }
 
-void MatmulOptimizer::_opSetDescription(mlir::Operation* op, const std::string& attrValue){
-  mlir::OpBuilder b(op->getContext());
-  op->setAttr("kcg.desc",b.getStringAttr(attrValue));
-}
+
 
 
 
@@ -312,8 +309,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto k_axes = Rewriter::split(loopK, 2, {config["BLOCK_SIZE_K"]});
     auto k_outer = k_axes[0], k_inner = k_axes[1];
-    _opSetDescription(k_inner,"k_inner");
-    _opSetDescription(k_outer,"k_outer");
+    tools::_opSetDescription(k_inner,"k_inner");
+    tools::_opSetDescription(k_outer,"k_outer");
     int64_t blockThreads;
     auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
 
@@ -371,11 +368,11 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loadFragAMap = getAffineMap("loadFragA", builder, config);
     auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
                       config["VECTORIZE_WIDTH"], k_inner, Position::begin);
-    _opSetDescription(loadFragA,"loadFragA");
+    tools::_opSetDescription(loadFragA,"loadFragA");
     auto loadFragBMap = getAffineMap("loadFragB", builder, config);
     auto loadFragB = Rewriter::read(smB, fragB, loadFragBMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
                       config["VECTORIZE_WIDTH"], loadFragA, Position::after);
-    _opSetDescription(loadFragB,"loadFragB");
+    tools::_opSetDescription(loadFragB,"loadFragB");
 
     Rewriter::cache_read(k_inner, A, fragA, getAffineMap("cacheReadA", builder, config), {m_inner.getInductionVar()});
     Rewriter::cache_read(k_inner, B, fragB, getAffineMap("cacheReadB", builder, config), {n_inner.getInductionVar()});
@@ -389,10 +386,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1];
     Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1});
     // module.dump();
-    _opSetDescription(m_inner_0,"m_inner_0");
-    _opSetDescription(m_inner_1,"m_inner_1");
-    _opSetDescription(n_inner_0,"n_inner_0");
-    _opSetDescription(n_inner_1,"n_inner_1");
+    tools::_opSetDescription(m_inner_0,"m_inner_0");
+    tools::_opSetDescription(m_inner_1,"m_inner_1");
+    tools::_opSetDescription(n_inner_0,"n_inner_0");
+    tools::_opSetDescription(n_inner_1,"n_inner_1");
     Rewriter::cache_write(m_inner_0, C, C, getAffineMap("cacheWriteC", builder, config), 
                           {threadIdx[0], threadIdx[1], blockIdx[0], blockIdx[1],
                            m_inner_0.getInductionVar(),n_inner_0.getInductionVar(),

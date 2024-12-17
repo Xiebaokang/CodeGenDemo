@@ -54,7 +54,7 @@ ts.WARP_LAYOUT_N= 16
 ```
 问题规模目前固定为1024，位置：
 ```python
-# Runtime/python/kcg/CompiledKernelFactory.py:
+# runtime/python/kcg/CompiledKernelFactory.py:
 # 用户输入：hsacopath，kernel名字(通过amdgcn获取)，
 class CompiledKernelFactory :
     @staticmethod
@@ -90,7 +90,7 @@ o.run(a,b,c)
 运行：
 ```sh
 conda activate triton_rocm
-cd ${project_folder}/Runtime/python 
+cd ${project_folder}/runtime/python 
 export PYTHONPATH=`pwd`
 cd ./kcg
 python test.py > log.log 2>&1

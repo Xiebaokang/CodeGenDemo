@@ -1,87 +1,11 @@
-#include "Operators/Operators.h"
-#include "utils.h"
-#include <filesystem>
+#include "Operators/Matmul.h"
 
 namespace KernelCodeGen {
+namespace Operators {
 
 std::string Matmul::s_function = "Unknown";
 
-mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
-  if(dtype == "float32") return builder.getF32Type();
-  if(dtype == "float64") return builder.getF64Type();
-  if(dtype == "float16") return builder.getF16Type();
-  if(dtype == "int64") return builder.getIntegerType(64);
-  if(dtype == "int32") return builder.getIntegerType(32);
-  if(dtype == "int16") return builder.getIntegerType(16);
-  if(dtype == "index") return builder.getIndexType();
-  if(dtype == "bool") return builder.getIntegerType(1);
-  assert(false && "getDType:: Unsupported Type ");
-  return nullptr;
-}
-
-std::string KcgDtypeToStr(KcgDtype type){
-  switch (type){
-    case KcgDtype::float8   : return "";break;
-    case KcgDtype::float16  : return "float16";break;
-    case KcgDtype::float32  : return "float32";break;
-    case KcgDtype::float64  : return "float64";break;
-    case KcgDtype::float128 : return "";break;
-    case KcgDtype::int8     : return "";break;
-    case KcgDtype::int16    : return "int16";break;
-    case KcgDtype::int32    : return "int32";break;
-    case KcgDtype::int64    : return "int64";break;
-  default:
-    assert(false && "KcgDtypeToStr Error");
-    break;
-  }
-  return "";
-}
-
-std::string typeToStr(mlir::Type type) {
-  if(type.isa<mlir::Float16Type>()) return {"float16"};
-  if(type.isa<mlir::Float32Type>()) return {"float32"};
-  if(type.isa<mlir::Float64Type>()) return {"float64"};
-  if(auto int_type = type.dyn_cast<mlir::IntegerType>()) {
-    if (int_type.getWidth() == 1) return {"bool"};
-    else if (int_type.getWidth() == 16) return {"int16"};
-    else if (int_type.getWidth() == 32) return {"int32"};
-    else if (int_type.getWidth() == 64) return {"int64"};
-  }
-  if(type.isa<mlir::IndexType>()) return {"index"};
-  return "";
-}
-
-mlir::func::FuncOp buildFunction(mlir::ModuleOp module, const std::string& funcName, const std::string& OpName, 
-                                 const std::vector<mlir::Type>& inputsTypes) {
-  mlir::OpBuilder builder(module);
-  builder.setInsertionPointToStart(module.getBody());
-  llvm::ArrayRef<mlir::Type> inputsTypesArray(inputsTypes);
-  auto functionType = builder.getFunctionType(mlir::TypeRange(inputsTypesArray), mlir::TypeRange({}));
-  auto funcOp = builder.create<mlir::func::FuncOp>(builder.getUnknownLoc(), llvm::StringRef(funcName), functionType);
-  
-  auto& region = funcOp->getRegion(0);
-  if (!region.hasOneBlock()) {
-    region.emplaceBlock();
-  }
-  auto& body =  funcOp.front(); //? region.front()  : ;
-  int nums = static_cast<int>(inputsTypes.size());
-  for (int i = 0; i < nums; i++ ) {
-    body.addArguments(inputsTypes[i], builder.getUnknownLoc());
-  }
-  
-  funcOp->setAttr(std::string("func.state"), builder.getStringAttr("cpu"));
-  funcOp->setAttr(std::string("func.op.name"), builder.getStringAttr(OpName));
-  funcOp->setAttr(std::string(AttrVisibility), builder.getStringAttr("public"));
-  funcOp->setAttr(std::string(AttrKernelFunc), builder.getI32IntegerAttr(1));
-  // funcOp->setAttr(std::string("func.dataflow.type"), builder.getStringAttr(typeToStr(dtype)));
-  auto& entryBlock = funcOp.front();
-  builder.setInsertionPointToStart(&entryBlock);
-  builder.create<mlir::func::ReturnOp>(builder.getUnknownLoc());
-  return funcOp;
-}
-
-
-void Matmul::build(mlir::ModuleOp module, 
+void Matmul::buildNaiveExpress(mlir::ModuleOp module, 
   std::vector<int64_t> shape, 
   const std::vector<std::string>& dtypes,
   const std::string& kernelName,
@@ -100,7 +24,7 @@ void Matmul::build(mlir::ModuleOp module,
   int64_t k = shape[2];
   std::vector<mlir::Type> mlirTypeArray;
   for(auto type : dtypes){
-    auto mlirType = getDType(builder, type);
+    auto mlirType = tools::getDType(builder,type);
     mlirTypeArray.push_back(mlirType);
   }
   mlir::func::FuncOp funcOp = createFunc(module, shape, mlirTypeArray, kernelName,isTransposeA);
@@ -156,7 +80,7 @@ std::optional<std::string> Matmul::verify(
     return err;
   }
   for(auto dtype : dtypes){
-    auto type = getDType(builder, dtype);
+    auto type = tools::getDType(builder, dtype);
     if (type == nullptr) {
       std::string err{"No exist this data type."};
       return err;
@@ -195,4 +119,7 @@ mlir::func::FuncOp Matmul::createFunc(
   return buildFunction(module, kernelName, "Matmul", {typeA, typeB, typeC});
 }
 
-}
+}  // Operators
+}  // KernelCodeGen
+
+

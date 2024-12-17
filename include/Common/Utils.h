@@ -1,12 +1,5 @@
-#ifndef _utils_h_
-#define _utils_h_
-#include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
+#ifndef _Utils_h_
+#define _Utils_h_
 
 #include "mlir/Tools/ParseUtilities.h"
 #include "llvm/Support/SourceMgr.h"
@@ -30,26 +23,6 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/BuiltinTypes.h"
 
-#include "mlir/Transforms/Passes.h"
-#include "mlir/Pass/PassRegistry.h"
-#include "mlir/Parser/Parser.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Pass/PassManager.h"
-
-#include "mlir/Target/LLVMIR/Dialect/All.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/NVVM/NVVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Dialect/ROCDL/ROCDLToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Export.h"
-#include "mlir/Target/LLVMIR/LLVMTranslationInterface.h"
-
-
-#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
-#include "mlir/Conversion/GPUCommon/GPUCommonPass.h"
-#include "mlir/Conversion/GPUToNVVM/GPUToNVVMPass.h"
-#include "mlir/Conversion/SCFToGPU/SCFToGPUPass.h"
 #include "llvm/Support/TargetSelect.h"
 
 #include "mlir/Dialect/SCF/Transforms/Passes.h"
@@ -92,26 +65,6 @@
 #include "mlir/IR/IntegerSet.h"
 #include "mlir/Transforms/DialectConversion.h"
 
-// lowering
-#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
-#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
-#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
-#include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
-#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
-#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Conversion/VectorToLLVM/ConvertVectorToLLVM.h"
-#include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
-#include "mlir/IR/BuiltinDialect.h"
-#include "llvm/ADT/Sequence.h"
-#include "llvm/ADT/SmallVector.h"
-#include "mlir/Conversion/Passes.h.inc"
-#include "config.h"
-
-// conversion
-#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
-
 #include <iostream>
 #include <memory>
 #include <functional>
@@ -121,8 +74,11 @@
 #include <cstdio>
 #include <sstream>
 
+
+
 namespace KernelCodeGen {
 
+/***********  enumerations & basic class  *****************/
 enum class Target {
   CUDA = 0,
   ROCm = 1,
@@ -150,12 +106,6 @@ enum class Layout {
   colMajor = 1,
 };
 
-struct NVVMMetadata {
-  llvm::SmallVector<int, 3> maxntid;
-  bool isKernel{};
-  // Free to extend with other information.
-};
-
 
 enum class KcgDtype : int {
   float8 = 1,
@@ -167,6 +117,13 @@ enum class KcgDtype : int {
   int16 = 12,
   int32 = 14,
   int64 = 18
+};
+
+enum class KcgKernelType : int {
+  matmul = 1,
+  conv2d = 2,
+  poolmax = 3
+  // other operators ...
 };
 
 static std::ostream& operator<<(std::ostream& s, KcgDtype ty){
@@ -185,21 +142,25 @@ static std::ostream& operator<<(std::ostream& s, KcgDtype ty){
   return s;
 }
 
-#define AttrKernelFunc "nvvm.kernel"
-#define AttrVisibility "sym_visibility" 
-#define AttrExternLib "kcg.externLibs"
+struct NVVMMetadata {
+  llvm::SmallVector<int, 3> maxntid;
+  bool isKernel{};
+};
+
+/************* attribute names & other naming rules ***********/ 
+
+#define AttrKernelFunc    "nvvm.kernel"
+#define AttrVisibility    "sym_visibility" 
+#define AttrExternLib     "kcg.externlibs"
+#define AttrRootFunc      "kcg.rootfunc"
+#define AttrKernelType    "kcg.kerneltype"
+#define AttrDescription   "kcg.desc"
 
 #define SHM_VAR_NAME(i) (std::string("kcg_shm")+std::to_string(i))
 
-#define KCG_ALIGNBYTE 16
 
-std::string getenv(const char *name);
 
-mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype);
-
-std::string typeToStr(mlir::Type type);
-
-std::string KcgDtypeToStr(KcgDtype type);
+/********  kernel keywords for matmul operator & other operators for tuning ***********/  
 
 #define  KEY_BLOCK_SIZE_M         "BLOCK_SIZE_M"
 #define  KEY_BLOCK_SIZE_N         "BLOCK_SIZE_N"
@@ -220,12 +181,32 @@ std::string KcgDtypeToStr(KcgDtype type);
 #define  KEY_K                    "K_SIZE"
 #define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
 
-#define LOG_DEBUG(message,module)  \
+/****************** other macro ******************** */
+
+#define INDEX_BIT_WIDTH     32
+#define KCG_ALIGNBYTE       16
+#define LOG_DEBUG(message,mod)  \
 {\
-  llvm::outs() << message;llvm::outs().flush(); module.dump();\
+  llvm::outs() << message;llvm::outs().flush(); mod.dump();\
 }
 
 
-}  // namespace KernelCodeGen end
+/*******************  common tool functions ****************/
 
-#endif
+namespace tools {
+  
+  std::string getenv(const char *name);
+  mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype);
+  std::string typeToStr(mlir::Type type);
+  std::string KcgDtypeToStr(KcgDtype type);
+  std::string KcgKernelTypeToString(KcgKernelType type);
+  void opSetAttr(mlir::Operation* op, const std::string& name, const std::string& val);
+  bool isOpAttrEqualToString(mlir::Operation* op, const std::string& name, const std::string& expectedvalue);
+  
+  /* ******** for debug use *************** */
+  void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
+
+}
+
+}  // KernelCodeGen
+#endif  // _Utils_h_

@@ -6,7 +6,8 @@
 #include "Target/HSACOTranslation.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include "utils.h"
+#include "Common/Utils.h"
+#include "Operators/Matmul.h"
 #ifdef COMPILE_AS_PYMODULE
 #include "Python.h"
 #endif
@@ -84,9 +85,9 @@ std::ostream& operator<<(std::ostream& os, MatmulParams arg){
   os << "- M : " << arg.m_size << std::endl;
   os << "- N : " << arg.n_size << std::endl;
   os << "- K : " << arg.k_size << std::endl;
-  os << "- m_dtypeA : " << KcgDtypeToStr(arg.m_dtypeA) << std::endl;
-  os << "- m_dtypeB : " << KcgDtypeToStr(arg.m_dtypeB) << std::endl;
-  os << "- m_dtypeC : " << KcgDtypeToStr(arg.m_dtypeC) << std::endl;
+  os << "- m_dtypeA : " << tools::KcgDtypeToStr(arg.m_dtypeA) << std::endl;
+  os << "- m_dtypeB : " << tools::KcgDtypeToStr(arg.m_dtypeB) << std::endl;
+  os << "- m_dtypeC : " << tools::KcgDtypeToStr(arg.m_dtypeC) << std::endl;
   os << "- m_BLOCK_SIZE_M : " <<arg.m_BLOCK_SIZE_M << std::endl;
   os << "- m_BLOCK_SIZE_N : " <<arg.m_BLOCK_SIZE_N << std::endl;
   os << "- m_BLOCK_SIZE_K : " <<arg.m_BLOCK_SIZE_K << std::endl;
@@ -118,9 +119,9 @@ std::map<Config, KernelInfo> testConfigs(
     auto config = configs[i];
     const auto& name = kernelNames[i];
     KernelInfo info;
-    auto dtypeA = KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_A]);
-    auto dtypeB = KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_B]);
-    auto dtypeC = KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_C]);
+    auto dtypeA = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_A]);
+    auto dtypeB = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_B]);
+    auto dtypeC = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_C]);
     auto M = config[KEY_M];
     auto N = config[KEY_N];
     auto K = config[KEY_K];
@@ -144,7 +145,8 @@ std::map<Config, KernelInfo> testConfigs(
     auto kernel = parsed.get();
     llvm::outs() << "=== outer MLIR = \n" ;llvm::outs().flush();kernel.dump();
 #else
-    auto kernel = generator.create<Matmul>(
+
+    auto kernel = generator.create<Operators::Matmul>(
       std::vector<int64_t>{M, N, K},
       std::vector<std::string>{dtypeA,dtypeB,dtypeC},
       name,isATranspose
@@ -159,7 +161,7 @@ std::map<Config, KernelInfo> testConfigs(
     std::cout << "==== translate res :" << "\n";
     std::cout << hsacoPath << "\n";
     info.m_hsacoPath = hsacoPath;
-    info.m_kernelName = generator.kernelFuncName<Matmul>();
+    info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();
     result[config] = info;
     std::cout << "==== kernel name : " << info.m_kernelName << "\n";
   }
