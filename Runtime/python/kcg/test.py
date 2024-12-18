@@ -10,6 +10,7 @@ from kcg.Kernel import *
 from kcg.CompiledKernelFactory import *
 from kcg.Operators import matmul
 import sys
+import numpy as np
 from kcg.KCGCompiler import KCGCompiler
 # import pymlir
 
@@ -54,8 +55,8 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-# case_normal_0(kp_matmul)
-case_bad_0(kp_matmul)
+case_normal_0(kp_matmul)
+# case_bad_0(kp_matmul)
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
@@ -80,14 +81,7 @@ def test_correctness(kpm : KernelArgMatmul):
     inConfig = UserInputs(hsacoPath,kernelName,kpm)
     inConfig.operatorKind = EnumOperator.Matmul
     packedKernel = CompiledKernelFactory.getKernel(inConfig)
-    warmupCount = 3
-    a = torch.empty(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
-    b = torch.empty(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
-    c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
-    for i in range(0,warmupCount) : # warmup
-        packedKernel.run(a,b,c)
-        torch.matmul(a,b)
-        
+    
     a = torch.rand(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
     b = torch.rand(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
     c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
@@ -95,17 +89,46 @@ def test_correctness(kpm : KernelArgMatmul):
     M, K = a.shape
     K, N = b.shape
     atrans = torch.transpose(a,0,1)
+    res = []
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+    benchmarkCount = 10
     if kpm.isATranspose :
-        packedKernel.run(atrans,b,c)
+        packedKernel.run(a,b,c) # warm up
+        for i in range(0,benchmarkCount) : # benchmark
+            start_event.record()
+            packedKernel.run(atrans,b,c)
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed_time = start_event.elapsed_time(end_event)
+            res.append(elapsed_time)
     else:
-        packedKernel.run(a,b,c)
-        
+        packedKernel.run(a,b,c) # warm up
+        for i in range(0,benchmarkCount) : # benchmark
+            start_event.record()
+            packedKernel.run(a,b,c)
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed_time = start_event.elapsed_time(end_event)
+            res.append(elapsed_time)
+    print(f"codegenDemo median time: {np.median(res)} ms")
     # o.run(a,b,c,
     #       M,N,K, a.stride(0), a.stride(1),  
     #         b.stride(0), b.stride(1),  
     #         c.stride(0), c.stride(1),  
     #     )
-    d = torch.matmul(a,b)
+    res1 = []
+    res1.clear()
+    torch.matmul(a,b) # warm up
+    for i in range(0,benchmarkCount) : # benchmark
+        start_event.record()
+        d = torch.matmul(a,b)
+        end_event.record()
+        torch.cuda.synchronize()
+        elapsed_time = start_event.elapsed_time(end_event)
+        res1.append(elapsed_time)
+    print(f"rocblas median time: {np.median(res1)} ms")
+    print(f"speed up: {np.median(res1)/np.median(res)}")
     print(c)
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
