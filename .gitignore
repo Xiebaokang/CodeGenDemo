@@ -5,3 +5,6 @@ Runtime/python/kcg/__pycache__/
 log
 *.log
 *.amdgcn
+ceshiData/*
+dump/*
+*pmc_results_*.txt
