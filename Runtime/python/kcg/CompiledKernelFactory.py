@@ -22,14 +22,21 @@ class UserInputs:
         self.kernelFuncName = kernel_func_name
         self.kernelParam = kernelParam
 
-    def gridDims(self):
+    def gridDims(self):  # 行优先矩阵，行方向为x方向，尺寸为n
         m = self.kernelParam.M
         n = self.kernelParam.N
-        return [ m // self.kernelParam.BLOCK_SIZE_M,n // self.kernelParam.BLOCK_SIZE_N,1 ]
+        return [ 
+                n // self.kernelParam.BLOCK_SIZE_N, 
+                m // self.kernelParam.BLOCK_SIZE_M ,
+                1 
+            ]
     
     def blockDims(self):
-        return [self.kernelParam.BLOCK_LAYOUT_M * self.kernelParam.WARP_LAYOUT_M,
-                self.kernelParam.BLOCK_LAYOUT_N * self.kernelParam.WARP_LAYOUT_N, 1 ]
+        return [
+                self.kernelParam.BLOCK_LAYOUT_N * self.kernelParam.WARP_LAYOUT_N, 
+                self.kernelParam.BLOCK_LAYOUT_M * self.kernelParam.WARP_LAYOUT_M,
+                1 
+            ]
         
     def sharedMem(self):
         # 假设 ABC类型相同

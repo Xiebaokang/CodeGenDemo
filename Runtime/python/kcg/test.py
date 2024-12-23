@@ -55,8 +55,8 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-case_normal_0(kp_matmul)
-# case_bad_0(kp_matmul)
+# case_normal_0(kp_matmul)
+case_bad_0(kp_matmul)
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)

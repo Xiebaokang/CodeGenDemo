@@ -110,7 +110,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   // || mapIdentifier == "loadFragA"
   )
   {
-    width = nLoopsLoadTileA < 1 ? (BM * BK / nThreads) : width;
+    width = nLoopsLoadTileA < 1 ? (BM * BK / nThreads) : width;  // 总体轮数<1. 说明width太大，有线程闲置
   }
   if (mapIdentifier == "loadTileB" 
   || mapIdentifier == "storeTileB" 
@@ -199,8 +199,8 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     // operands are: [threadIdx.y, threadIdx.x, iv, ivInVector]
     auto& ty = dim0;
     auto& tx = dim1;
-    auto& iv = dim2;
-    auto& ivInVector = dim3;
+    auto& iv = dim2;  // allthreads的第几轮操作
+    auto& ivInVector = dim3;  // vector_store时的迭代变量(0,1,2,3)
 
     auto threadIdExpr = ty * blockDimX + tx;
     auto virtaulThreadIxExpr = threadIdExpr + iv * nThreads;
@@ -227,29 +227,52 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     // operands are: [threadIdx.y, threadIdx.x, k_inner, iv]
     auto& ty = dim0;
     auto& tx = dim1;
-
+    auto& k_inner = dim2;
+#if 1
+    auto tidExpr = ty * blockDimX + tx;
+    auto warpId = tidExpr.floorDiv(config[KEY_WARP_SIZE]);
+    auto laneId = tidExpr % config[KEY_WARP_SIZE];
+    auto tid_m = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) );
+    auto m_offs = tid_m * TM;
+    auto k_offs = k_inner;
+    llvm::SmallVector<mlir::AffineExpr> exprs;
+    exprs.push_back(k_offs);
+    exprs.push_back(m_offs);
+#else
+    auto& iv = dim3;
     auto threadIdExpr = ty * blockDimX + tx;
     auto warpId = threadIdExpr.floorDiv(static_cast<uint64_t>(config["WARP_SIZE"]));
     auto laneId = threadIdExpr % static_cast<uint64_t>(config["WARP_SIZE"]);
 
-    auto M_offset = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + dim3 * warpOrg[0]);
-    auto K_offset = dim2;
+    auto M_offset = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + iv * warpOrg[0]);
+    auto K_offset = k_inner;
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(K_offset);
     exprs.push_back(M_offset * width);
+  #endif
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "loadFragB") {
     // dims are:[dim0, dim1, dim2, dim3]
     // operands are: [threadIdx.y, threadIdx.x, k_inner, iv]
     auto threadIdExpr = dim0 * blockDimX + dim1;
+    auto& k_inner = dim2;
     auto warpId = threadIdExpr.floorDiv(static_cast<uint64_t>(config["WARP_SIZE"]));
     auto laneId = threadIdExpr % static_cast<uint64_t>(config["WARP_SIZE"]);
+#if 0
+    auto tid_n =  laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] );
+    auto n_offs = tid_n * TN;
+    auto k_offs = k_inner;
+    llvm::SmallVector<mlir::AffineExpr> exprs;
+    exprs.push_back(k_offs);
+    exprs.push_back(n_offs);
+#else     
 
     auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim3 * warpOrg[1]);
     auto K_offset = dim2;
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(K_offset);
     exprs.push_back(N_offset * width);
+#endif
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheReadA" || mapIdentifier == "cacheReadB") {
     llvm::SmallVector<mlir::AffineExpr> exprs;
@@ -258,15 +281,24 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   } else if (mapIdentifier == "cacheWriteC") {
     // dims are:[dim0, dim1, dim2, dim3, dim4, dim5, dim6, dim7]
     // operands are: [threadIdx.y, threadIdx.x, blockIdx.y, blockIdx.x, iv0, iv1, iv2, iv3]
-    auto threadIdExpr = dim0 * blockDimX + dim1;
+    auto& TY = dim0; auto& TX = dim1; auto& BY = dim2; auto& BX = dim3;
+
+    auto threadIdExpr = TY * blockDimX + TX;
     auto warpId = threadIdExpr.floorDiv(static_cast<uint64_t>(config["WARP_SIZE"]));
     auto laneId = threadIdExpr % static_cast<uint64_t>(config["WARP_SIZE"]);
+#if  0
+    auto tid_m =  laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + dim4.floorDiv(width) * warpOrg[0]);
+    auto tid_n = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(width) * warpOrg[1]);
 
-    auto M_offset = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + dim4.floorDiv(width) * warpOrg[0]);
-    auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(width) * warpOrg[1]);
+#else
+    auto M_offset = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + dim4.floorDiv(TM) * warpOrg[0]);
+    // auto M_offset = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) + dim4.floorDiv(width) * warpOrg[0]);
+    auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(TN) * warpOrg[1]);
+    // auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(width) * warpOrg[1]);
     llvm::SmallVector<mlir::AffineExpr> exprs;
-    exprs.push_back(dim2 * config["BLOCK_SIZE_M"] + M_offset * width + dim6);
-    exprs.push_back(dim3 * config["BLOCK_SIZE_N"] + N_offset * width + dim7);
+    exprs.push_back(dim2 * config["BLOCK_SIZE_M"] + M_offset * TM + dim6);
+    exprs.push_back(dim3 * config["BLOCK_SIZE_N"] + N_offset * TN + dim7);
+#endif
     return mlir::AffineMap::get(/*dimCount*/8, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else {
     assert(false);
@@ -314,12 +346,14 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     int64_t blockThreads;
     auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
 
-    auto ldgASize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;
-    auto ldgBSize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;
-    auto fragASize = config["BLOCK_SIZE_M"] / smAReadSride(blockThreads, config["WARP_SIZE"], 
-                                                          config["BLOCK_LAYOUT_N"], config["WARP_LAYOUT_M"]);
-    auto fragBSize = config["BLOCK_SIZE_N"] / smBReadSride(blockThreads, config["WARP_SIZE"], 
-                                                          config["BLOCK_LAYOUT_M"], config["WARP_LAYOUT_N"]);
+    auto ldgASize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;  // global->shm 的中转
+    auto ldgBSize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;  // 
+    // auto fragASize = config["BLOCK_SIZE_M"] / smAReadSride(blockThreads, config["WARP_SIZE"], 
+    //                                                       config["BLOCK_LAYOUT_N"], config["WARP_LAYOUT_M"]);
+    // auto fragBSize = config["BLOCK_SIZE_N"] / smBReadSride(blockThreads, config["WARP_SIZE"], 
+    //                                                       config["BLOCK_LAYOUT_M"], config["WARP_LAYOUT_N"]);
+    auto fragASize = config[KEY_THREAD_SIZE_M];
+    auto fragBSize = config[KEY_THREAD_SIZE_N];
     auto elementA = A.getType().dyn_cast<mlir::MemRefType>().getElementType();
     auto elementB = B.getType().dyn_cast<mlir::MemRefType>().getElementType();
 

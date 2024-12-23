@@ -73,7 +73,8 @@
         "variant": "cpp",
         "codecvt": "cpp",
         "iomanip": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "*.in": "cpp"
     },
     "workbench.colorCustomizations": {
         "activityBar.activeBackground": "#b299e5",
