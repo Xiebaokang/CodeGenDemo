@@ -55,8 +55,18 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32
     )
 
-# case_normal_0(kp_matmul)
-case_bad_0(kp_matmul)
+case_normal_0(kp_matmul)
+# case_bad_0(kp_matmul)
+
+# def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
+#     abs_diff = torch.abs(tensor1 - tensor2)
+#     rel_diff = abs_diff / (torch.abs(tensor1) + 1e-12)  # 避免除以零的情况
+
+#     # 比较绝对误差和相对误差
+#     error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
+#     diff_elements = torch.sum(error_mask).item()
+#     max_error = torch.max(torch.abs(tensor1 - tensor2))
+#     return diff_elements, max_error
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
@@ -65,8 +75,20 @@ def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     # 比较绝对误差和相对误差
     error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
     diff_elements = torch.sum(error_mask).item()
-    max_error = torch.max(torch.abs(tensor1 - tensor2))
-    return diff_elements, max_error
+    max_error = torch.max(abs_diff)
+
+    # 找到第一个不匹配的索引及其对应值
+    if diff_elements > 0:
+        first_error_index = torch.nonzero(error_mask, as_tuple=True)
+        first_error_position = tuple(idx[0].item() for idx in first_error_index)
+        value_tensor1 = tensor1[first_error_position]
+        value_tensor2 = tensor2[first_error_position]
+    else:
+        first_error_position = None
+        value_tensor1 = None
+        value_tensor2 = None
+
+    return diff_elements, max_error, first_error_position, value_tensor1, value_tensor2
 
 def test_correctness(kpm : KernelArgMatmul):
     kernelCompiler = KCGCompiler()
@@ -133,8 +155,11 @@ def test_correctness(kpm : KernelArgMatmul):
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
     else:
-        diff,max_error= compare_with_error(d,c)
+        diff,max_error,first_error_position, value_tensor1, value_tensor2 = compare_with_error(d,c)
         print('test fail! maxerror = ',max_error, '; diff=',diff)
+        print(f"First error position: {first_error_position}")
+        print(f"Value in tensor1: {value_tensor1}")
+        print(f"Value in tensor2: {value_tensor2}")
         # hipprof --pmc python ./test.py 
 
 kp_matmul.check()

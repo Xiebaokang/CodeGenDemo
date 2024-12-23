@@ -264,7 +264,7 @@ static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
         // static const auto runtime_path =
         //     this_library_path.parent_path().parent_path() / "third_party" / "cuda" /
         //     "lib" / "libdevice.10.bc";
-    const std::string runtime_path = "/home/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc" ;
+    const std::string runtime_path = "/home/bizefeng/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc" ;
     if (fs::exists(runtime_path)) {
       // externLibs.try_emplace(libdevice, runtime_path.string());
       externLibs.try_emplace(libdevice, runtime_path);
@@ -281,7 +281,7 @@ static std::map<std::string, std::string> getExternLibs(mlir::ModuleOp module) {
       //                                          .parent_path() /
       //                                      "python" / "triton" / "third_party" /
       //                                      "cuda" / "lib" / "libdevice.10.bc";
-      static std::string compiletime_path = "/home/xushilong/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc";
+      static std::string compiletime_path = "/home/bizefeng/CodeGenDemo/third_party/cuda/lib/libdevice.10.bc";
       if (!fs::exists(compiletime_path)) {
         std::string error_msg = "Can't find libdevice at neither " + runtime_path + " nor " + compiletime_path;
         llvm::report_fatal_error(error_msg.c_str());
@@ -381,8 +381,8 @@ std::string translateMLIRToLLVMIR(mlir::ModuleOp module, Target target, const in
 
 // 弃用
 std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module) {
-  std::string llvmPath{"/home/pangyunfei/xie/CodeGenDemo/build/llvmir.ll"};
-  std::string mlirPtah{"/home/pangyunfei/xie/CodeGenDemo/build/llvm-dialect.mlir"};
+  std::string llvmPath{"/home/bizefeng/CodeGenDemo/build/llvmir.ll"};
+  std::string mlirPtah{"/home/bizefeng/CodeGenDemo/build/llvm-dialect.mlir"};
   // 存储mlir
   std::error_code ec;
   llvm::raw_fd_ostream outputFile(mlirPtah, ec);
@@ -394,7 +394,7 @@ std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module) {
   outputFile.close();
   // 运行指令
   std::stringstream command;
-  command << "/home/pangyunfei/xie/CodeGenDemo/bin/mlir-translate ";
+  command << "/home/bizefeng/CodeGenDemo/bin/mlir-translate ";
   command << mlirPtah << " -mlir-to-llvmir > " << llvmPath;
 
   int result = system(command.str().c_str());

@@ -141,7 +141,7 @@ std::map<Config, KernelInfo> testConfigs(
     mlir::LLVM::LLVMDialect
     >();
     llvm::outs() << " ---- Loading outMLIR\n" ;llvm::outs().flush();
-    auto parsed = parseSourceFile<ModuleOp>("/home/pangyunfei/xushilong/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
+    auto parsed = parseSourceFile<ModuleOp>("/home/bizefeng/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
     auto kernel = parsed.get();
     llvm::outs() << "=== outer MLIR = \n" ;llvm::outs().flush();kernel.dump();
 #else

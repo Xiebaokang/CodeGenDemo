@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 
 ############################ User config #####################
 set(LLVM_INSTALL_DIR "~/llvm-install")
-set(DEBUG_AMDGCN_OUTPUT_PATH "/home/xushilong/CodeGenDemo/test.amdgcn") 
+set(DEBUG_AMDGCN_OUTPUT_PATH "/home/bizefeng/CodeGenDemo/test.amdgcn") 
 set(USER_LLD_PATH "/opt/dtk/llvm/bin/ld.lld") 
 option(COMPILE_AS_PYMODULE "Compile kcg_compiler to DynamicLib or Exe" ON)
 set(PYTHON_CONDA_ENV_DIR "~/anaconda3/envs/triton_rocm")
