@@ -228,11 +228,11 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto& ty = dim0;
     auto& tx = dim1;
     auto& k_inner = dim2;
-#if 1
+#if 0
     auto tidExpr = ty * blockDimX + tx;
     auto warpId = tidExpr.floorDiv(config[KEY_WARP_SIZE]);
     auto laneId = tidExpr % config[KEY_WARP_SIZE];
-    auto tid_m = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) );
+    auto tid_m = laneId.floorDiv(threadOrg[1]) + threadOrg[0] * (warpId.floorDiv(warpOrg[1]) +iv * warpOrg[0] );
     auto m_offs = tid_m * TM;
     auto k_offs = k_inner;
     llvm::SmallVector<mlir::AffineExpr> exprs;
@@ -248,7 +248,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto K_offset = k_inner;
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(K_offset);
-    exprs.push_back(M_offset * width);
+    exprs.push_back(M_offset * TM);
   #endif
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "loadFragB") {
@@ -259,7 +259,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto warpId = threadIdExpr.floorDiv(static_cast<uint64_t>(config["WARP_SIZE"]));
     auto laneId = threadIdExpr % static_cast<uint64_t>(config["WARP_SIZE"]);
 #if 0
-    auto tid_n =  laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] );
+    auto tid_n =  laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim3 * warpOrg[1]);
     auto n_offs = tid_n * TN;
     auto k_offs = k_inner;
     llvm::SmallVector<mlir::AffineExpr> exprs;
@@ -271,7 +271,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto K_offset = dim2;
     llvm::SmallVector<mlir::AffineExpr> exprs;
     exprs.push_back(K_offset);
-    exprs.push_back(N_offset * width);
+    exprs.push_back(N_offset * TN);
 #endif
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheReadA" || mapIdentifier == "cacheReadB") {
@@ -296,8 +296,8 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(TN) * warpOrg[1]);
     // auto N_offset = laneId % threadOrg[1] + threadOrg[1] * (warpId % warpOrg[1] + dim5.floorDiv(width) * warpOrg[1]);
     llvm::SmallVector<mlir::AffineExpr> exprs;
-    exprs.push_back(dim2 * config["BLOCK_SIZE_M"] + M_offset * TM + dim6);
-    exprs.push_back(dim3 * config["BLOCK_SIZE_N"] + N_offset * TN + dim7);
+    exprs.push_back(BY * config["BLOCK_SIZE_M"] + M_offset * TM + dim6);
+    exprs.push_back(BX * config["BLOCK_SIZE_N"] + N_offset * TN + dim7);
 #endif
     return mlir::AffineMap::get(/*dimCount*/8, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else {
