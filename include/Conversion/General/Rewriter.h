@@ -2,6 +2,7 @@
 #define _Rewriter_h_
 
 #include "Common/Utils.h"
+#include "Conversion/General/GeneralFuncs.h"
 #include "Analysis/Analyzer.h"
 #include "mlir/Support/LLVM.h"
 #include <vector>
@@ -9,18 +10,16 @@
 namespace KernelCodeGen {
 namespace Rewriter {
 
-mlir::OpBuilder getBuilder(mlir::affine::AffineForOp op, Position pos);
 
-std::vector<mlir::Value> getParallelIdx(mlir::affine::AffineParallelOp parallelLevel);
+std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
 
-std::vector<mlir::affine::AffineForOp> split(
-  mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
-
-mlir::Value bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp> &loops);
+mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &hasIterLoop, std::vector<mlir::affine::AffineForOp> &loops);
 
 void reorder(const std::vector<mlir::affine::AffineForOp> &forOp);
 
 mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp> &forOp);
+
+mlir::affine::AffineParallelOp parallelToOneDim(mlir::affine::AffineParallelOp parallelOp);
 
 template <typename ParentOpType>
 mlir::Value alloc_buffer(
@@ -84,12 +83,9 @@ mlir::Value alloc_buffer(ContextOp contextOp, Position pos, MemorySpace ms,
   }
 }
 
-mlir::affine::AffineForOp read(mlir::Value src, mlir::Value dst, mlir::AffineMap map,
-                                llvm::SmallVector<mlir::Value> operands, int64_t width,
-                                mlir::affine::AffineForOp compute_at, Position pos);
 
-mlir::affine::AffineForOp read(mlir::OpBuilder &builder, mlir::Value src, mlir::Value dst,
-                                mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, int64_t width);
+mlir::affine::AffineForOp read(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
+                               int64_t width, mlir::affine::AffineForOp compute_at, Position pos);
 
 mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map,
                                 llvm::SmallVector<mlir::Value> operands, int64_t width,

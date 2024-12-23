@@ -488,7 +488,7 @@ int main() {
   const int BLOCK_SCATTER_WIDTH_B = 2;
   const int WARP_SCATTER_WIDTH_A = 2;
   const int WARP_SCATTER_WIDTH_B = 2;
-  const int LOCAL_SPLIT_U = 1;   /*2*/
+  const int LOCAL_SPLIT_U = 2;   /*2*/
   const int BLOCK_MAPPING = 8;
   const int WARP_SIZE = 64;
   const int GLOB_STORE_WIDTH = 6;
