@@ -1,9 +1,23 @@
+#include <vector>
+int vectorize_copy(float* from, float* to, int width){
+    // 向量化拷贝
+    return 0;
+}
+int nextValidWidth(int width){
+    // 从列表里寻找下一个可用的validwidth 用于搬运 global->shm
+    return 0;
+}
+
+void sync(){  // hip 的线程同步函数
+    ;
+}
+
 int main(){
     const int M = 1024, N = 1024, K = 1024;
     const int BM = 64, BN = 64, BK = 16;
     const int TM = 4, TN = 4;
-    int tx,ty;
-    int bx,by,bz;
+    int tx,ty,tz;
+    int bx,by;
     int blockDimX, blockDimY, gridDimX, gridDimY;
     float **A,**B,**C;     
     const int SPLIT_U = 4;
@@ -12,6 +26,9 @@ int main(){
     const int WARP_LAYOUT_Y = 4;
     const int BLOCK_LAYOUT_X = 1;
     const int BLOCK_LAYOUT_Y = 4;
+    int THREAD_COUNT_Y = BM / TM;
+    int THREAD_COUNT_X = BN / TN;
+    int THREAD_COUNT = THREAD_COUNT_Y * THREAD_COUNT_X;
     
     // ========= 朴素表达 ==============
     // for(int i=0;i<M;++i){
@@ -92,7 +109,7 @@ int main(){
     // }
 
     // // ======= 并行化 & loop invariant code motion ==========
-    // int i = by * BM , j = bx * BN, kkk = bz * 1;  // [bx,by,bz] < [N/BN, M/BM, SPLIT_U] 
+    // int i = by * BM , j = bx * BN, kkk = tz * 1;  // [bx,by,tz] < [N/BN, M/BM, SPLIT_U] 
     // int ii = ty * TM, jj = tx * TN;  // [tx,ty] < [BN/TN, BM/TM]
     // // block work
     // for(int k=0;k<K; k+= BK){       
@@ -110,7 +127,6 @@ int main(){
     // }
 
     // ======= warp 处理的区域离散化 & thread 区域离散化 ==========
-#if 1
     const int WSSY = 2;  // 某warp划分单元的最小尺寸, warpscattersizey
     const int WSSX = 2;
     const int THREAD_SCATTER_SIZE_Y = 1;  // thread处理的连续的最小单元尺寸 TSSY
@@ -122,8 +138,8 @@ int main(){
     int warpRepeatX = TN / THREAD_SCATTER_SIZE_X;
     int threadRepeatX = WSSY / THREAD_SCATTER_SIZE_Y;
     int threadRepeatY = WSSY / THREAD_SCATTER_SIZE_Y;
-    
-    int i = by * BM , j = bx * BN, kkk = bz * 1;  // [bx,by,bz] < [N/BN, M/BM, SPLIT_U] 
+#if 0
+    int i = by * BM , j = bx * BN, kkk = tz * 1;  // [bx,by,tz] < [N/BN, M/BM, SPLIT_U] 
     int ii = ty * TM, jj = tx * TN;  // [tx,ty] < [BN/TN, BM/TM]
     int tid = ty * blockDimX + tx;
 
@@ -150,16 +166,16 @@ int main(){
             // warp 离散化 (重映射 i+ii, j+jj -> warpIndexX, warpIndexY)
             for(int wi = 0; wi < warpRepeatX; ++wi){
                 for(int wj = 0; wj < warpRepeatY;++wj){
-                    int warpIndexX = BN/warpRepeatX * wi + warpIdx*BN/(warpRepeatX * BLOCK_LAYOUT_X);  // offs + base
-                    int warpIndexY = BM/warpRepeatY * wj + warpIdy*BM/(BLOCK_LAYOUT_Y * warpRepeatY);
+                    int warpIndexX = BN/warpRepeatX * wi + warpIdx*BN/(warpRepeatX * BLOCK_LAYOUT_X) ;  // offs + base
+                    int warpIndexY = BM/warpRepeatY * wj + warpIdy*BM/(BLOCK_LAYOUT_Y * warpRepeatY) ;
                     // thread 离散化 （重映射 iii,jjj->x_offs,y_offs）
                     for(int p = 0;p < threadRepeatX;++p){
                         for(int q=0;q < threadRepeatY;++q){
                             int x_offs = BN / (warpRepeatX * threadRepeatX) * p + laneIdx * THREAD_SCATTER_SIZE_X; // offs + base
                             int y_offs = BM / (warpRepeatY * threadRepeatY) * q + laneIdy * THREAD_SCATTER_SIZE_Y;
                             // 重映射后的组装 (i+ii+iii, j+jj+jjj -> xx,yy)
-                            int xx = warpIndexX + x_offs;
-                            int yy = warpIndexY + y_offs;
+                            int xx = bx * BN + warpIndexX + x_offs ;
+                            int yy = by * BM + warpIndexY + y_offs ;
                             int indexK = k + kk + kkk;
                             // 连续小区域( tssx * tssy 大小)
                             for(int m = 0;m<THREAD_SCATTER_SIZE_X;++m){
@@ -182,23 +198,158 @@ int main(){
              * 
              * _y = f( iv_warpRepeatY, iv_threadRepeatY, iv_TSSY)
              * _x = g(iv_warpRepeatX, iv_threadRepeatX, iv_TSSX)
-             * indexK = k + kk + kkk == h(iv_K, iv_BK, iv_SPLIT_U)
+             * indexK = k + kk + kkk == h(iv_K, iv_BK, iv_SPLIT_U), iv_SPLIT_U=tz 
+             * so indexK = h(iv_K, iv_BK, tz)
              * 
              * 可得到 ABC affinemap的所需维度：
              * affinemapC = map(_y,_x) = 
              *          map(f(iv_warpRepeatY, iv_threadRepeatY, iv_TSSY), g(iv_warpRepeatX, iv_threadRepeatX, iv_TSSX))
              *          dim = [iv_warpRepeatY, iv_threadRepeatY, iv_TSSY, iv_warpRepeatX, iv_threadRepeatX, iv_TSSX]
-             *              + [ty,tx]
+             *              + [ty,tx,bx,by,tz]
              * affinemapA = map(_y,indexK) = 
-             *          map(f(iv_warpRepeatY, iv_threadRepeatY, iv_TSSY), h(iv_K, iv_BK, iv_SPLIT_U))
-             *          dim = [iv_warpRepeatY, iv_threadRepeatY, iv_TSSY, iv_K, iv_BK, iv_SPLIT_U] + [ty,tx]
+             *          map(f(iv_warpRepeatY, iv_threadRepeatY, iv_TSSY), h(iv_K, iv_BK, tz))
+             *          dim = [iv_warpRepeatY, iv_threadRepeatY, iv_TSSY, iv_K, iv_BK, tz] + [ty,tx,by,bx]
              * 
              * affinemapB = map(indexK,_x) = 
-             *          map(h(iv_K, iv_BK, iv_SPLIT_U), g(iv_warpRepeatX, iv_threadRepeatX, iv_TSSX))
-             *          dim = [iv_K, iv_BK, iv_SPLIT_U,iv_warpRepeatX, iv_threadRepeatX, iv_TSSX] + [ty,tx]
+             *          map(h(iv_K, iv_BK, tz), g(iv_warpRepeatX, iv_threadRepeatX, iv_TSSX))
+             *          dim = [iv_K, iv_BK, tz,iv_warpRepeatX, iv_threadRepeatX, iv_TSSX] + [ty,tx,by,bx]
              */
         }
     }
+#endif
+    
+    // ======= add global->shm & shm->reg ========
+#if 1
+    int i = by * BM , j = bx * BN, kkk = tz * 1;  // [bx,by,tz] < [N/BN, M/BM, SPLIT_U] 
+    int ii = ty * TM, jj = tx * TN;  // [tx,ty] < [BN/TN, BM/TM]
+    int tid = ty * blockDimX + tx;
+
+    int laneId = tid % WARP_SIZE;
+    int warpId = tid / WARP_SIZE;
+    int warpIdx = warpId % BLOCK_LAYOUT_X;
+    int warpIdy = warpId / BLOCK_LAYOUT_X;
+    int laneIdx = laneId % WARP_LAYOUT_X;
+    int laneIdy = laneId / WARP_LAYOUT_X;
+
+    // global->shm
+    int GLOBAL_LOAD_WIDTH_A = 8, GLOBAL_LOAD_WIDTH_B = 8;  // 设定的搬运最大宽度
+    std::vector<int> validLoadWidth = {8,4,2,1};  // 可用值
+    int GlobalLoadTargetWidthB = BN*BK/THREAD_COUNT;
+
+
+
+    float** smA;  // BK * BM
+    float** smB;  // BK * BN
+
+    float* regA;  // TM * 1
+    float* regB;  // TN * 1
+    float** regC;  // TM * TN
+    // block work
+    for(int k=0;k<K; k+= BK){   
+        // globalA->shmA
+        int GlobalLoadTargetWidthA = BM*BK/THREAD_COUNT;  // 每个线程应该搬运多少数字
+        {
+            int remain = GlobalLoadTargetWidthA;
+            int maxwidth = remain > GLOBAL_LOAD_WIDTH_A ? 
+                GLOBAL_LOAD_WIDTH_A : nextValidWidth(GlobalLoadTargetWidthA);
+            int threadNeedsPerLine = BM / maxwidth;
+            int copyCount = remain / maxwidth;  // 需要搬运几次
+            for(int i_=0;i_<copyCount;++i_){
+                auto virtualTid = tid + i_ * THREAD_COUNT;
+                int coordX = tid % threadNeedsPerLine;
+                int coordY = tid / threadNeedsPerLine;
+                vectorize_copy(&A[k+coordY][coordX] , &smA[coordY][coordX], maxwidth);
+                // GlboalAToTempAMap : [k+coordY][coordX] -> reg
+                // TempAToSMAMap : reg-> [coordY][coordX]
+            }
+            remain = remain % maxwidth;  // 更新remain
+            if(remain > 0){
+                // 复制以上代码（update remain, update width, update copyCount, update threadNeedsPerLine）
+                // check remain > 0
+                // 直到remain == 0 结束拷贝。 代码总体作为 global->shm 的代码
+            }
+        }
+        // globalB->shmB
+        int GlobalLoadTargetWidthB = BN*BK/THREAD_COUNT;  // 每个线程应该搬运多少数字
+        {
+            int remain = GlobalLoadTargetWidthB;
+            int maxwidth = remain > GLOBAL_LOAD_WIDTH_B ? 
+                GLOBAL_LOAD_WIDTH_B : nextValidWidth(GlobalLoadTargetWidthB);
+            int threadNeedsPerLine = BN / maxwidth;
+            int copyCount = remain / maxwidth;  // 需要搬运几次
+            for(int i_=0;i_<copyCount;++i_){
+                auto virtualTid = tid + i_ * THREAD_COUNT;
+                int coordX = tid % threadNeedsPerLine;
+                int coordY = tid / threadNeedsPerLine;
+                vectorize_copy(&B[k+coordY][coordX] , &smB[coordY][coordX], maxwidth);
+                // GlboalBToTempBMap : [k+coordY][coordX] -> reg
+                // TempBToSMBMap : reg-> [coordY][coordX]
+            }
+            remain = remain % maxwidth;  // 更新remain
+            if(remain > 0){
+                // 复制以上代码（update remain, update width, update copyCount, update threadNeedsPerLine）
+                // check remain > 0
+                // 直到remain == 0 结束拷贝。 代码总体作为 global->shm 的代码
+            }
+        }
+        sync();  // 等待拷贝完成
+        // thread caculate C
+        for(int kk = 0;kk < BK; kk += SPLIT_U){
+            // thread 处理连续的 TM*TN 大小 -> 处理离散的几个小连续区域. 映射关系由warpId laneId wss tss导出
+            // warp 离散化 (重映射 i+ii, j+jj -> warpIndexX, warpIndexY)
+            for(int wi = 0; wi < warpRepeatX; ++wi){
+                for(int wj = 0; wj < warpRepeatY;++wj){
+                    int warpIndexX = BN/warpRepeatX * wi + warpIdx*BN/(warpRepeatX * BLOCK_LAYOUT_X) ;  // offs + base
+                    int warpIndexY = BM/warpRepeatY * wj + warpIdy*BM/(BLOCK_LAYOUT_Y * warpRepeatY) ;
+                    // thread 离散化 （重映射 iii,jjj->x_offs,y_offs）
+                    for(int p = 0;p < threadRepeatX;++p){
+                        for(int q=0;q < threadRepeatY;++q){
+                            int x_offs = BN / (warpRepeatX * threadRepeatX) * p + laneIdx * THREAD_SCATTER_SIZE_X; // offs + base
+                            int y_offs = BM / (warpRepeatY * threadRepeatY) * q + laneIdy * THREAD_SCATTER_SIZE_Y;
+                            // 重映射后的组装 (i+ii+iii, j+jj+jjj -> xx,yy)
+                            // int xx = bx * BN + warpIndexX + x_offs ;
+                            // int yy = by * BM + warpIndexY + y_offs ;
+                            int indexK = k + kk + kkk;
+                            // shm -> reg
+                            // 由于引入了sm，故只需要考虑 tid 在 sm的位置映射即可
+                            int xx_ = warpIndexX + x_offs ;
+                            int yy_ = warpIndexY + y_offs ;
+                            for(int m = 0;m < THREAD_SCATTER_SIZE_X;++m){
+                                int _x = xx_ + m;
+                                regB[_x] = smB[indexK][_x];
+                                // SMBToTempMap: [indexK][_x]
+                                // TempToRegBMap : [_x] 
+                            }
+                            for(int n=0;n < THREAD_SCATTER_SIZE_Y;++n){
+                                int _y = yy_ + n;
+                                regA[_y] = smA[indexK][_y];
+                                // SMAToTempMap: [indexK][_y]
+                                // TempToRegAMap : [_y] 
+                            }
+
+                            // 连续小区域( tssx * tssy 大小)
+                            for(int m = 0;m<THREAD_SCATTER_SIZE_X;++m){
+                                for(int n = 0;n<THREAD_SCATTER_SIZE_Y;++n){
+                                    int _y = yy_ + n;
+                                    int _x = xx_ + m;
+                                    regC[_y][_x] += regA[_y] * regB[_x];
+                                    // ReduceRegCMap : [_y][_x]
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    sync();  // 等待计算C完成
+    // write back C ( 向量化? ) ：根据 splitU的数目，复用sm，将旧值写回sm，然后串行化累加，最后写回globalC
+    for(int i=0;i<TM;++i){
+        for(int j=0;j<TN;++j){
+            C[i][j] = regC[i][j];
+        }
+    }
+
 #endif
     
     
