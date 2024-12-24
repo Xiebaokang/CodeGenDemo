@@ -256,11 +256,14 @@ int main(){
             int copyCount = remain / maxwidth;  // 需要搬运几次
             for(int i_=0;i_<copyCount;++i_){
                 auto virtualTid = tid + i_ * THREAD_COUNT;
-                int coordX = tid % threadNeedsPerLine;
-                int coordY = tid / threadNeedsPerLine;
+                int coordX = virtualTid % threadNeedsPerLine;
+                int coordY = virtualTid / threadNeedsPerLine;
                 vectorize_copy(&A[k+coordY][coordX] , &smA[coordY][coordX], maxwidth);
                 // GlboalAToTempAMap : [k+coordY][coordX] -> reg
+                // dims [ivK, ty, BLOCKDIMX ,tx , BM, _maxwidth, ivCpyCount, THREAD_COUNT]
+                // [k + virtualTid % threadNeedsPerLine]
                 // TempAToSMAMap : reg-> [coordY][coordX]
+                // i.e. [ty, BLOCKDIMX ,tx , ivCpyCount , THREAD_COUNT, BM , _maxwidth ]
             }
             remain = remain % maxwidth;  // 更新remain
             if(remain > 0){
@@ -279,10 +282,11 @@ int main(){
             int copyCount = remain / maxwidth;  // 需要搬运几次
             for(int i_=0;i_<copyCount;++i_){
                 auto virtualTid = tid + i_ * THREAD_COUNT;
-                int coordX = tid % threadNeedsPerLine;
-                int coordY = tid / threadNeedsPerLine;
+                int coordX = virtualTid % threadNeedsPerLine;
+                int coordY = virtualTid / threadNeedsPerLine;
                 vectorize_copy(&B[k+coordY][coordX] , &smB[coordY][coordX], maxwidth);
                 // GlboalBToTempBMap : [k+coordY][coordX] -> reg
+                // dims : [ivK, ty, tx, blockDimX ,ivCopyCount , THREAD_COUNT, BN , maxwidth]
                 // TempBToSMBMap : reg-> [coordY][coordX]
             }
             remain = remain % maxwidth;  // 更新remain
@@ -303,9 +307,9 @@ int main(){
                     int warpIndexY = BM/warpRepeatY * wj + warpIdy*BM/(BLOCK_LAYOUT_Y * warpRepeatY) ;
                     // thread 离散化 （重映射 iii,jjj->x_offs,y_offs）
                     for(int p = 0;p < threadRepeatX;++p){
-                        for(int q=0;q < threadRepeatY;++q){
+                        for(int ivThreadRepeatY = 0;ivThreadRepeatY < threadRepeatY;++ivThreadRepeatY){
                             int x_offs = BN / (warpRepeatX * threadRepeatX) * p + laneIdx * THREAD_SCATTER_SIZE_X; // offs + base
-                            int y_offs = BM / (warpRepeatY * threadRepeatY) * q + laneIdy * THREAD_SCATTER_SIZE_Y;
+                            int y_offs = BM / (warpRepeatY * threadRepeatY) * ivThreadRepeatY + laneIdy * THREAD_SCATTER_SIZE_Y;
                             // 重映射后的组装 (i+ii+iii, j+jj+jjj -> xx,yy)
                             // int xx = bx * BN + warpIndexX + x_offs ;
                             // int yy = by * BM + warpIndexY + y_offs ;
@@ -318,12 +322,20 @@ int main(){
                                 int _x = xx_ + m;
                                 regB[_x] = smB[indexK][_x];
                                 // SMBToTempMap: [indexK][_x]
+                                /**
+                                 * @brief 
+                                 * dims : [ivK , ivBK, tz, BN,WARPREPEATX, ivWRX , tx,ty,BLOCKDIMX, 
+                                 *          WARP_SIZE, BLOCK_LAYOUT_X , THREADREPEATX, ivThreadRepeatX , 
+                                 *       THREAD_SCATTER_SIZE_X , ivTHREAD_SCATTER_SIZE_X]
+                                 */
+                                // 
                                 // TempToRegBMap : [_x] 
                             }
-                            for(int n=0;n < THREAD_SCATTER_SIZE_Y;++n){
-                                int _y = yy_ + n;
+                            for(int ivTSSY=0;ivTSSY < THREAD_SCATTER_SIZE_Y;++ivTSSY){
+                                int _y = yy_ + ivTSSY;
                                 regA[_y] = smA[indexK][_y];
                                 // SMAToTempMap: [indexK][_y]
+                                // dims : [ivK , ivBK , tz , yy_ + ivTSSY]
                                 // TempToRegAMap : [_y] 
                             }
 
