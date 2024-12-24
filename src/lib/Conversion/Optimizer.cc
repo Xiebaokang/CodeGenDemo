@@ -333,16 +333,28 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     LOG_DEBUG("===== after parallel =======\n",module);
 
     std::vector<mlir::affine::AffineForOp> kmn_axes{loopK, m_inner, n_inner};
+    LOG_DEBUG("===== m_inner =======\n",m_inner);
+    LOG_DEBUG("===== n_inner =======\n",n_inner);
+    LOG_DEBUG("===== loopk =======\n",loopK);
+    // loopk寄存器实例化
     auto tileC = Rewriter::bufferizeLoopCarryVar(kmn_axes);
+    LOG_DEBUG("===== after bufferizeLoopCarryVar =======\n",module);
     loopK = kmn_axes[0], m_inner = kmn_axes[1], n_inner = kmn_axes[2];
 
     Rewriter::reorder({loopK, m_inner, n_inner});
     // module.dump();
+    LOG_DEBUG("===== after reorderK =======\n",module);
 
     auto k_axes = Rewriter::split(loopK, 2, {config["BLOCK_SIZE_K"]});
+    LOG_DEBUG("===== after splitK =======\n",module);
     auto k_outer = k_axes[0], k_inner = k_axes[1];
     tools::_opSetDescription(k_inner,"k_inner");
     tools::_opSetDescription(k_outer,"k_outer");
+    LOG_DEBUG("===== after splitKopSetDescription =======\n",module);
+    int localsplitu = 2;
+    auto lsu_axes = Rewriter::localSplitU(k_inner, localsplitu);
+    tools::_opSetDescription(lsu_axes[0],"local_split_u");
+    LOG_DEBUG("===== after localSplitU =======\n",module);
     int64_t blockThreads;
     auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
 
@@ -416,6 +428,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     assert(writeCbody.size() == 1);
     auto m_inner_axes = Rewriter::split(writeCbody[0][0], 2, {config["VECTORIZE_WIDTH"]});
     auto n_inner_axes = Rewriter::split(writeCbody[0][1], 2, {config["VECTORIZE_WIDTH"]});
+    LOG_DEBUG("===== VECTORIZE_WIDTH =======\n",module);
     auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1];
     auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1];
     Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1});
