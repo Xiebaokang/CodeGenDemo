@@ -56,6 +56,22 @@ struct MatmulOptimizer : Optimizer {
   
 };
 
+struct MatMulAffineMap {
+  // global->temp
+  static mlir::AffineMap GlboalAToTempAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth = 0);
+  static mlir::AffineMap GlboalBToTempBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth = 0);
+  // temp->shm
+  static mlir::AffineMap TempAToSMAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth = 0);
+  static mlir::AffineMap TempBToSMBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth = 0);
+  // shm->tmpVal
+  static mlir::AffineMap SMBToTempMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  static mlir::AffineMap SMAToTempMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  // tempVal->reg
+  static mlir::AffineMap TempToRegBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  static mlir::AffineMap TempToRegAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  static mlir::AffineMap ReduceRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+};
+
 }  // KernelCodeGen
 
 #endif // _Optimizer_h_

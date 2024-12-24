@@ -147,6 +147,8 @@ struct NVVMMetadata {
   bool isKernel{};
 };
 
+
+
 /************* attribute names & other naming rules ***********/ 
 
 #define AttrKernelFunc    "nvvm.kernel"
@@ -180,6 +182,39 @@ struct NVVMMetadata {
 #define  KEY_N                    "N_SIZE"
 #define  KEY_K                    "K_SIZE"
 #define  KEY_IS_A_TRANSPOSE       "IS_ATRANS"
+
+class ConfigMatmul {
+public:
+  int BM;
+  int BN;
+  int BK;
+  int TM;
+  int TN;
+  int GLOBAL_LOAD_WIDTH_A;
+  int GLOBAL_LOAD_WIDTH_B;
+  int GLOBAL_STORE_WIDTH;
+  int BLOCK_LAYOUT_Y;
+  int BLOCK_LAYOUT_X;
+  int WARP_LAYOUT_Y;
+  int WARP_LAYOUT_X;
+  int WARP_SIZE;
+  int WARP_SCATTER_SIZE_X;
+  int WARP_SCATTER_SIZE_Y;
+  int THREAD_SCATTER_SIZE_X;
+  int THREAD_SCATTER_SIZE_Y;
+  int LOCAL_SPLIT_U;
+  int BLOCK_MAPPING;
+
+public:
+  bool isValid();
+  inline int WARP_REPEAT_X() const { return TN / WARP_SCATTER_SIZE_X;}
+  inline int WARP_REPEAT_Y() const { return TM / WARP_SCATTER_SIZE_Y;}
+  inline int THREAD_REPEAT_Y() const { return WARP_SCATTER_SIZE_Y / THREAD_SCATTER_SIZE_Y; }
+  inline int THREAD_REPEAT_X() const { return WARP_SCATTER_SIZE_X / THREAD_SCATTER_SIZE_X; }
+  inline int THREAD_COUNT_Y() const { return BM / TM; }
+  inline int THREAD_COUNT_X() const { return BN / TN; }
+  inline int THREAD_COUNT() const { return THREAD_COUNT_Y() * THREAD_COUNT_X() * LOCAL_SPLIT_U; }
+};
 
 /****************** other macro ******************** */
 

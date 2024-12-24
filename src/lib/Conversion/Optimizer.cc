@@ -55,31 +55,169 @@ int64_t smBReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutM, i
   return (warpNum / blockLayoutM) * warpLayoutN;
 }
 
-// mlir::AffineMap getAffineMap_GlobalToShmA(mlir::OpBuilder& builder,std::map<std::string, int> config){
-//   auto dim_tx = builder.getAffineDimExpr(0);
-//   auto dim_ty = builder.getAffineDimExpr(1);
-//   auto dim_by = builder.getAffineDimExpr(2);
-//   auto dim_k_outer = builder.getAffineDimExpr(3);
-//   const int& BM = config[KEY_BLOCK_SIZE_M]; 
-//   const int& BN = config[KEY_BLOCK_SIZE_N]; 
-//   const int& BK = config[KEY_BLOCK_SIZE_K];
-//   const int& TM = config[KEY_THREAD_SIZE_M];
-//   const int& TN = config[KEY_THREAD_SIZE_N];
-//   int64_t blockDimY = BM / TM;  // y轴 thread个数
-//   int64_t blockDimX = BN / TN;  // x轴 thread个数
-//   int64_t nThreadsInBlock =  blockDimY * blockDimX;
-//   bool vectorize = config.count("VECTORIZE_WIDTH") != 0;
-//   int WIDTH = vectorize ? config[KEY_VECTORIZE_WIDTH] : 1;
-//   int nElementsPerThread = BM*BK/nThreadsInBlock;  // Atile 需要每个thread 搬运多少数据
-//   int nReadLoopCount = nElementsPerThread / WIDTH;  // 几次能搬运ok
-//   if(nElementsPerThread < WIDTH){
-//     WIDTH = nElementsPerThread;
-//   }
-//   // tid = ty * blockDimx + tx
-//   auto tid = dim_ty * blockDimX + dim_tx;
-  
+mlir::AffineMap MatMulAffineMap::GlboalAToTempAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth){
+  // GlboalAToTempAMap : [k+coordY][coordX] -> reg
+  // i.e. [ivK, ty, BLOCKDIMX ,tx , BM, _maxwidth, ivCpyCount, THREAD_COUNT]
+  uint32_t dimCount = 0;
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ivK = builder.getAffineDimExpr(dimCount++);
+  auto ivCpyCount = builder.getAffineDimExpr(dimCount++);
 
-// }
+  uint64_t threadNeedsPerLine = cfg.BM / maxwidth;
+  auto blockDimX = cfg.THREAD_COUNT_X();
+  auto tid = ty * blockDimX;
+  auto virtualTid = tid + ivCpyCount * cfg.THREAD_COUNT();
+  auto coordX = virtualTid % threadNeedsPerLine;
+  auto coordY = virtualTid.floorDiv(threadNeedsPerLine);
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(ivK + coordY);
+  exprs.push_back(coordX);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+
+mlir::AffineMap MatMulAffineMap::TempAToSMAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth ){
+  // TempAToSMAMap : reg-> [coordY][coordX]
+  // i.e. [ty, BLOCKDIMX ,tx , ivCpyCount , THREAD_COUNT, BM , _maxwidth ]
+  uint32_t dimCount = 0;
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ivCpyCount = builder.getAffineDimExpr(dimCount++);
+
+  uint64_t threadNeedsPerLine = cfg.BM / maxwidth;
+  auto blockDimX = cfg.THREAD_COUNT_X();
+  auto tid = ty * blockDimX;
+  auto virtualTid = tid + ivCpyCount * cfg.THREAD_COUNT();
+  auto coordX = virtualTid % threadNeedsPerLine;
+  auto coordY = virtualTid.floorDiv(threadNeedsPerLine);
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(coordY);
+  exprs.push_back(coordX);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+mlir::AffineMap MatMulAffineMap::GlboalBToTempBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg,int maxwidth){
+  // GlboalAToTempAMap : [k+coordY][coordX] -> reg
+  // i.e. [ivK, ty, BLOCKDIMX ,tx , BM, _maxwidth, ivCpyCount, THREAD_COUNT]
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto ivK = builder.getAffineDimExpr(dimCount++);
+  auto ivCpyCount = builder.getAffineDimExpr(dimCount++);
+
+  uint64_t threadNeedsPerLine = cfg.BN / maxwidth;
+  auto blockDimX = cfg.THREAD_COUNT_X();
+  auto tid = ty * blockDimX;
+  auto virtualTid = tid + ivCpyCount * cfg.THREAD_COUNT();
+  auto coordX = virtualTid % threadNeedsPerLine;
+  auto coordY = virtualTid.floorDiv(threadNeedsPerLine);
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(ivK + coordY);
+  exprs.push_back(coordX);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+
+mlir::AffineMap MatMulAffineMap::TempBToSMBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth ){
+  // TempAToSMAMap : reg-> [coordY][coordX]
+  // i.e. [ty, BLOCKDIMX ,tx , ivCpyCount , THREAD_COUNT, BM , _maxwidth ]
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto ivCpyCount = builder.getAffineDimExpr(dimCount++);
+
+  uint64_t threadNeedsPerLine = cfg.BN / maxwidth;
+  auto blockDimX = cfg.THREAD_COUNT_X();
+  auto tid = ty * blockDimX;
+  auto virtualTid = tid + ivCpyCount * cfg.THREAD_COUNT();
+  auto coordX = virtualTid % threadNeedsPerLine;
+  auto coordY = virtualTid.floorDiv(threadNeedsPerLine);
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(coordY);
+  exprs.push_back(coordX);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+
+mlir::AffineMap MatMulAffineMap::SMBToTempMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
+  //   regB[_x] <- temp <- smB[indexK][_x];
+  // // SMBToTempMap: [indexK][_x]
+  //  * dims : [tx,ty, tz, ivK , ivBK, ivWRX , ivThreadRepeatX,ivTHREAD_SCATTER_SIZE_X,
+  //              BN,WARPREPEATX,BLOCKDIMX, WARP_SIZE, BLOCK_LAYOUT_X , 
+  //              THREADREPEATX, THREAD_SCATTER_SIZE_X  ]
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto tz = builder.getAffineDimExpr(dimCount++);
+  auto ivK = builder.getAffineDimExpr(dimCount++);
+  auto ivBK = builder.getAffineDimExpr(dimCount++);
+  auto ivWarpRepeatX = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadRepeatX = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadScatterSizeX = builder.getAffineDimExpr(dimCount++);
+  
+  auto tid = ty * cfg.THREAD_COUNT_X() + tx;
+  auto laneId = tid % cfg.WARP_SIZE;
+  auto warpId = tid.floorDiv(cfg.WARP_SIZE);
+  auto warpIdx = warpId % cfg.BLOCK_LAYOUT_X;
+  auto warpIndexX = cfg.BN/cfg.WARP_REPEAT_X() * ivWarpRepeatX + (warpIdx*cfg.BN).floorDiv(cfg.WARP_REPEAT_X() * cfg.BLOCK_LAYOUT_X) ;  // offs + base
+  auto laneIdx = laneId % cfg.WARP_LAYOUT_X;
+  auto laneIdy = laneId.floorDiv(cfg.WARP_LAYOUT_X) ;
+  
+  auto indexK = ivK + ivBK + tz;
+
+  auto x_offs = cfg.BN / (cfg.WARP_REPEAT_X() * cfg.THREAD_REPEAT_X()) * ivThreadRepeatX 
+    + laneIdx * cfg.THREAD_SCATTER_SIZE_X; // offs + base
+  auto _x = warpIndexX + x_offs + ivThreadScatterSizeX;
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(indexK);
+  exprs.push_back(_x);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+mlir::AffineMap MatMulAffineMap::TempToRegBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
+  //   regB[_x] <- temp <- smB[indexK][_x];
+  // // SMBToTempMap: [indexK][_x]
+  //  * dims : [tx,ty, tz, ivK , ivBK, ivWRX , ivThreadRepeatX,ivTHREAD_SCATTER_SIZE_X,
+  //              BN,WARPREPEATX,BLOCKDIMX, WARP_SIZE, BLOCK_LAYOUT_X , 
+  //              THREADREPEATX, THREAD_SCATTER_SIZE_X  ]
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto ivWarpRepeatX = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadRepeatX = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadScatterSizeX = builder.getAffineDimExpr(dimCount++);
+  
+  auto tid = ty * cfg.THREAD_COUNT_X() + tx;
+  auto laneId = tid % cfg.WARP_SIZE;
+  auto warpId = tid.floorDiv(cfg.WARP_SIZE);
+  auto warpIdx = warpId % cfg.BLOCK_LAYOUT_X;
+  auto warpIndexX = cfg.BN/cfg.WARP_REPEAT_X() * ivWarpRepeatX + (warpIdx*cfg.BN).floorDiv(cfg.WARP_REPEAT_X() * cfg.BLOCK_LAYOUT_X) ;  // offs + base
+  auto laneIdx = laneId % cfg.WARP_LAYOUT_X;
+  auto laneIdy = laneId.floorDiv(cfg.WARP_LAYOUT_X) ;
+
+  auto x_offs = cfg.BN / (cfg.WARP_REPEAT_X() * cfg.THREAD_REPEAT_X()) * ivThreadRepeatX 
+    + laneIdx * cfg.THREAD_SCATTER_SIZE_X; // offs + base
+  auto _x = warpIndexX + x_offs + ivThreadScatterSizeX;
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(_x);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+
+mlir::AffineMap MatMulAffineMap::SMAToTempMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
+  ;
+}
+
+mlir::AffineMap MatMulAffineMap::TempToRegAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
+  ;
+}
+
+mlir::AffineMap MatMulAffineMap::ReduceRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
+  ;
+}
+
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
   auto dim0 = builder.getAffineDimExpr(0);

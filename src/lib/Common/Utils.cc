@@ -2,6 +2,9 @@
 
 namespace KernelCodeGen {
 
+bool ConfigMatmul::isValid(){
+  return true;
+}
 
 namespace tools {
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
