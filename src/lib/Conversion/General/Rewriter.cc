@@ -512,6 +512,7 @@ mlir::Value bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp>& loops)
   auto dtype = carryVar.getType();
   auto bufferType = mlir::MemRefType::get(
     bufferShape, dtype, {}, static_cast<int>(MemorySpace::local));
+  builder.setInsertionPoint(loops[1]);
   auto allocOp = builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), bufferType);
   allocOp.setAlignment(KCG_ALIGNBYTE);
   // step1: init the buffer
