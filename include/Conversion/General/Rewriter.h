@@ -16,6 +16,8 @@ std::vector<mlir::Value> getParallelIdx(mlir::affine::AffineParallelOp parallelL
 std::vector<mlir::affine::AffineForOp> split(
   mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
 
+std::vector<mlir::affine::AffineForOp> localSplitU(mlir::affine::AffineForOp forOp, uint64_t num_output);
+
 mlir::Value bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp> &loops);
 
 void reorder(const std::vector<mlir::affine::AffineForOp> &forOp);
