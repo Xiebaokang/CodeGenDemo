@@ -163,25 +163,19 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
   factors.insert(factors.begin(), 1);
   assert(factors.size() == num_output);
   std::reverse(factors.begin(), factors.end());
-  llvm::outs() << "==== test1 =====\n";llvm::outs().flush();
   auto lowerbound = forOp.getLowerBoundMap();
   auto upperbound = forOp.getUpperBoundMap();
   int step = forOp.getStep().getLimitedValue();
-  llvm::outs() << "==== test2 =====\n";llvm::outs().flush();
   assert(lowerbound.isConstant() == true);
   assert(upperbound.isConstant() == true);
   int64_t lb = lowerbound.getSingleConstantResult();
-  llvm::outs() << "==== test3 =====\n";llvm::outs().flush();
   int64_t ub = upperbound.getSingleConstantResult();
   assert(step == 1 && lb == 0);
-  llvm::outs() << "==== test4 =====\n";llvm::outs().flush();
   upperBoundsVector.push_back(ub);
   std::reverse(upperBoundsVector.begin(), upperBoundsVector.end());
   mlir::SmallVector<int64_t, 16> lowerBounds(num_output, /*Value=*/0);
-  llvm::outs() << "==== test5 =====\n";llvm::outs().flush();
   mlir::SmallVector<int64_t, 16> steps(factors.begin(), factors.end());
   mlir::SmallVector<int64_t, 16> upperBounds(upperBoundsVector.begin(), upperBoundsVector.end());
-  llvm::outs() << "==== test6 =====\n";llvm::outs().flush();
 
   std::vector<mlir::Value> ivsVector;
 
@@ -194,7 +188,6 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
       }
     }
   );
-  llvm::outs() << "==== test7 =====\n";llvm::outs().flush();
 
   // build AffineMap: (i) -> (i1 + i2 + i3)
 
@@ -204,17 +197,14 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
   outermostForOp.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineForOp newLoop) {
     loops.push_back(newLoop);
   });
-  llvm::outs() << "==== test8 =====\n";llvm::outs().flush();
   mlir::affine::AffineForOp innermostForOp = loops.back();
   // erase the yield op, as the forOp will bring the AffineYieldOp
   innermostForOp.getBody()->back().erase();
   innermostForOp.getBody()->getOperations().splice(innermostForOp.getBody()->end(), forOp.getBody()->getOperations());
-  llvm::outs() << "==== test9 =====\n";llvm::outs().flush();
   /* Method 1: Replace old iv with new iv attached affineMapAttr */
 
   auto oldIv = forOp.getInductionVar();
   auto users_ = oldIv.getUsers();
-  llvm::outs() << "==== test10 =====\n";llvm::outs().flush();
   std::set<mlir::Operation*> users;
   for (auto user : users_) {users.insert(user);}
 
@@ -230,11 +220,9 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
       sumExpr = sumExpr + dims.back();
     }
   }
-  llvm::outs() << "==== test11 =====\n";llvm::outs().flush();
 
   for (auto user : users) {
     mlir::OpBuilder builder(user);
-    llvm::outs() << "==== test12 =====\n";llvm::outs().flush();
     if (auto loadOp = mlir::dyn_cast<mlir::affine::AffineLoadOp>(user)) {
       llvm::SmallVector<mlir::AffineExpr> exprs;
       llvm::SmallVector<mlir::Value> operands;

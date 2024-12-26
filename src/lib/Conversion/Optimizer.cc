@@ -320,18 +320,19 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     llvm::outs() << "==== original mlir =====\n";llvm::outs().flush();module.dump();
     auto m_axes = Rewriter::split(loopM, 3, {config["THREAD_SIZE_M"], config["BLOCK_SIZE_M"]});
     auto n_axes = Rewriter::split(loopN, 3, {config["THREAD_SIZE_N"], config["BLOCK_SIZE_N"]});
+    llvm::outs() << "===== after split m/n =======\n";llvm::outs().flush(); module.dump();
 
     auto m_outer = m_axes[0], m_mider = m_axes[1], m_inner = m_axes[2];
     auto n_outer = n_axes[0], n_mider = n_axes[1], n_inner = n_axes[2];
 
     Rewriter::reorder({m_outer, n_outer, m_mider, n_mider, m_inner, n_inner});
-    llvm::outs() << "===== after split & reorder =======\n";llvm::outs().flush(); module.dump();
+    llvm::outs() << "===== m/n reorder =======\n";llvm::outs().flush(); module.dump();
 
     std::vector<mlir::affine::AffineForOp> kmn_axes{loopK, m_inner, n_inner};
     LOG_DEBUG("===== m_inner =======\n",m_inner);
     LOG_DEBUG("===== n_inner =======\n",n_inner);
     LOG_DEBUG("===== loopk =======\n",loopK);
-    // loopk寄存器实例化
+    // loopk寄存器实例化，迭代变量外提
     auto tileC = Rewriter::bufferizeLoopCarryVar(kmn_axes);
     LOG_DEBUG("===== after bufferizeLoopCarryVar =======\n",module);
     loopK = kmn_axes[0], m_inner = kmn_axes[1], n_inner = kmn_axes[2];
@@ -391,27 +392,32 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
                       (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
                       k_outer, Position::begin);
+    LOG_DEBUG("===== gm->temp loadTileA =======\n",module);
+
     auto loadTileBMap = getAffineMap("loadTileB", builder, config);
     auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
                       {threadIdx[0], threadIdx[1], k_outer.getInductionVar(), blockIdx[1]}, 
                       (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
                       loadTileA, Position::after);
     // module.dump();
-    LOG_DEBUG("===== shm->temp =======\n",module);
+    LOG_DEBUG("===== gm->temp loadTileB =======\n",module);
 
     auto storeTileAMap = getAffineMap("storeTileA", builder, config);
     // auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[1], threadIdx[0]}, 
     auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[0], threadIdx[1]}, 
                         (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
                         loadTileB, Position::after);
+    LOG_DEBUG("===== temp->shm storeTileA =======\n",module);
+
     auto storeTileBMap = getAffineMap("storeTileB", builder, config);
     auto storeTileB = Rewriter::write(tileB, smB, storeTileBMap, {threadIdx[0], threadIdx[1]}, 
                         (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
                         storeTileA, Position::after);
+    LOG_DEBUG("===== temp->shm storeTileB =======\n",module);
+
     auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
     auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
-
-    LOG_DEBUG("===== storeTileAB =======\n",module);
+    LOG_DEBUG("===== barrierTileATileB =======\n",module);
 
     auto loadFragAMap = getAffineMap("loadFragA", builder, config);
     auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
