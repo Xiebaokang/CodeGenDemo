@@ -3,6 +3,7 @@ build
 Runtime/python/kcg/*/__pycache__/
 Runtime/python/kcg/__pycache__/
 log
+temp/
 *.log
 *.amdgcn
 ceshiData/*
