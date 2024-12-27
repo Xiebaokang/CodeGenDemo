@@ -382,6 +382,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared,
             {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
     // module.dump();
+    LOG_DEBUG("===== after alloc_buffer =======\n",module);
     
     auto blockIdx = Rewriter::getParallelIdx(gridLevel);
     auto threadIdx = Rewriter::getParallelIdx(blockLevel);
@@ -389,12 +390,17 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loadTileAMap = getAffineMap("loadTileA", builder, config);
     // threadIdx[0], threadIdx[1] 两者先后交换，即可改变 tx ty 的方向
     // shm->temp
+    llvm::outs() << "===== loadTileAMap =======\n" << loadTileAMap << "\n";llvm::outs().flush();
+    // auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
+    //                   (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+    //                   k_outer, Position::begin);
     auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
                       (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
                       k_outer, Position::begin);
     LOG_DEBUG("===== gm->temp loadTileA =======\n",module);
 
     auto loadTileBMap = getAffineMap("loadTileB", builder, config);
+    llvm::outs() << "===== loadTileB =======\n" << loadTileBMap << "\n";llvm::outs().flush();
     auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
                       {threadIdx[0], threadIdx[1], k_outer.getInductionVar(), blockIdx[1]}, 
                       (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
