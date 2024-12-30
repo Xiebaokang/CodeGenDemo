@@ -66,23 +66,30 @@ template <
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
 __global__ void matmul(float* A, float* B, float* C, const int M, const int N, const int K) {
-  const int BLOCK_Y = BM / TM;
-  const int BLOCK_X = BN / TN;
-  const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
+  const int BLOCK_Y = BM / TM; // 64 / 4 = 16
+  const int BLOCK_X = BN / TN;// 48 / 6 = 8
+  const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U; // 16 * 8 * 2 = 256
   const int tid = threadIdx.x;
-  const int tz = tid / (BLOCK_X * BLOCK_Y);
+  // const int tz = tid / (BLOCK_X * BLOCK_Y);
+  const int tz = tid % (THREAD_NUM) / (BLOCK_X * BLOCK_Y);
   const int tid_other = tid % (BLOCK_X * BLOCK_Y);
 
   // enhance L2 cache hit rate
   const int bid = blockIdx.x;
-  const int GROUP_NUM = BLOCK_MAPPING * (N / BN);
-  const int group_id = bid / GROUP_NUM;
+  const int GROUP_NUM = BLOCK_MAPPING * (N / BN); // 8 * (1056 / 48) = 176
+  // group_id = bid / BLOCK_MAPPING / (N / BN) == bid / (N / BN) / BLOCK_MAPPING == bid_y / BLOCK_MAPPING, 代表M方向处于第几组blockmapping
+  const int group_id = bid / GROUP_NUM; 
+  // 当前block所属mapping block的起始行号
   const int start_y = group_id * BLOCK_MAPPING;
+  // 判断mapping的尾循环
   const int block_mapping = (M / BM) - start_y < BLOCK_MAPPING ? (M / BM) - start_y : BLOCK_MAPPING;
-  const int by = start_y + (bid % block_mapping);
+  // const int by = start_y + (bid % block_mapping);
+  const int by = start_y + (bid / BLOCK_MAPPING / BLOCK_MAPPING % (((N / BN) + BLOCK_MAPPING - 1) / BLOCK_MAPPING));
   const int bx = (bid % GROUP_NUM) / block_mapping;
 
   // thread mapping
+  // const int warp_id = tid_other / WARP_SIZE;
+  // const int lane_id = tid_other % WARP_SIZE;
   const int warp_id = tid_other / WARP_SIZE;
   const int lane_id = tid_other % WARP_SIZE;
   const int warp_y = warp_id / BLOCK_LAYOUT_X;
@@ -348,11 +355,15 @@ __global__ void matmul(float* A, float* B, float* C, const int M, const int N, c
   if (LOCAL_SPLIT_U > 1) {
     // reg_c -> shared
     const int LDS_C_STRIDE = BM * BN;
+    const int GLOB_STORE_WIDTH1 = 1;
     const int GLOB_STORE_TOTAL_WIDTH = LDS_C_STRIDE / THREAD_NUM;   // 3072 / 256 = 12
     const int REG_C_STRIDE = GLOB_STORE_TOTAL_WIDTH / LOCAL_SPLIT_U;  // 12 /2 = 6
     const int GLOB_STORE_NUM = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH;   // 12 / 6 = 2
     const int GLOB_STORE_REAR_WIDTH = GLOB_STORE_TOTAL_WIDTH % GLOB_STORE_WIDTH;   // 12 % 6 = 0
     const int GLOB_STORE_ROW_WIDTH = (THREAD_NUM / BM) * GLOB_STORE_WIDTH;   // (256 / 64) * 6 = 24
+    const int GLOB_STORE_NUM1 = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH1;   // 12 / 6 = 2
+    const int GLOB_STORE_REAR_WIDTH1 = GLOB_STORE_TOTAL_WIDTH % GLOB_STORE_WIDTH1;   // 12 % 6 = 0
+    const int GLOB_STORE_ROW_WIDTH1 = (THREAD_NUM / BM) * GLOB_STORE_WIDTH1;   // (256 / 64) * 6 = 24
 
     const int sh_load_row = tid / (THREAD_NUM / BM);   // [0, 64]
     const int sh_load_col = tid % (THREAD_NUM / BM);   // [0, 4]
@@ -383,28 +394,30 @@ __global__ void matmul(float* A, float* B, float* C, const int M, const int N, c
     #pragma unroll
     for (int i=0; i<LOCAL_SPLIT_U; i++) {
       #pragma unroll
-      for (int j=0; j<GLOB_STORE_NUM; j++) {
-        VecCpy<GLOB_STORE_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                       j * GLOB_STORE_WIDTH], 
+      for (int j=0; j<GLOB_STORE_NUM1; j++) {
+        memcpy(&regC[i * GLOB_STORE_TOTAL_WIDTH + j], 
                             &LDSMemory[i * LDS_C_STRIDE + 
                                        sh_load_row * BN + 
-                                       j * GLOB_STORE_ROW_WIDTH + 
-                                       sh_load_col * GLOB_STORE_WIDTH]);
+                                       j * GLOB_STORE_ROW_WIDTH1 + 
+                                       sh_load_col]);
+          regC[j] += regC[i * GLOB_STORE_TOTAL_WIDTH + j];
       }
-      if (GLOB_STORE_REAR_WIDTH) {
-        VecCpy<GLOB_STORE_REAR_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                            GLOB_STORE_NUM * GLOB_STORE_WIDTH], 
+      if (GLOB_STORE_REAR_WIDTH1) {
+        VecCpy<GLOB_STORE_REAR_WIDTH1>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
+                                            GLOB_STORE_NUM1 * GLOB_STORE_WIDTH1], 
                                  &LDSMemory[i * LDS_C_STRIDE + 
                                             sh_load_row * BN +
-                                            GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
-                                            sh_load_col * GLOB_STORE_REAR_WIDTH]);
+                                            GLOB_STORE_NUM1 * GLOB_STORE_ROW_WIDTH1 + 
+                                            sh_load_col * GLOB_STORE_REAR_WIDTH1]);
+        regC[GLOB_STORE_NUM1 * GLOB_STORE_WIDTH1] += regC[i * GLOB_STORE_TOTAL_WIDTH + 
+                                       GLOB_STORE_NUM1 * GLOB_STORE_WIDTH1];
       }
-      if (i > 0) {
-        #pragma unroll
-        for (int k=0; k<GLOB_STORE_TOTAL_WIDTH; k++) {
-          regC[k] += regC[i * GLOB_STORE_TOTAL_WIDTH + k];
-        }
-      }
+      // if (i > 0) {
+      //   #pragma unroll
+      //   for (int k=0; k<GLOB_STORE_TOTAL_WIDTH; k++) {
+      //     regC[k] += regC[i * GLOB_STORE_TOTAL_WIDTH + k];
+      //   }
+      // }
     }
 
     // computing result
@@ -478,16 +491,20 @@ int main() {
   const int BK = 32;
   const int TM = 4;
   const int TN = 6;
-  const int GLOB_LOAD_WIDTH_A = 6;   /*6*/
-  const int GLOB_LOAD_WIDTH_B = 2;
+  // 读取gmA gmB的每次读取宽度
+  const int GLOB_LOAD_WIDTH_A = 8;   /*6*/
+  const int GLOB_LOAD_WIDTH_B = 6;
+  // 每个block内warp的排列
   const int BLOCK_LAYOUT_Y = 2;   // BM / TM / WARP_LAYOUT_Y
   const int BLOCK_LAYOUT_X = 1;    // BN / TN / WARP_LAYOUT_X
+  // 每个warp内thread的排列
   const int WARP_LAYOUT_Y = 8;
   const int WARP_LAYOUT_X = 8;
-  const int BLOCK_SCATTER_WIDTH_A = 2;
-  const int BLOCK_SCATTER_WIDTH_B = 2;
-  const int WARP_SCATTER_WIDTH_A = 2;
-  const int WARP_SCATTER_WIDTH_B = 2;
+  const int BLOCK_SCATTER_WIDTH_A = 4;
+  const int BLOCK_SCATTER_WIDTH_B = 6;
+  // 每个线程计算的连续区域的长和宽
+  const int WARP_SCATTER_WIDTH_A = 4;
+  const int WARP_SCATTER_WIDTH_B = 6;
   const int LOCAL_SPLIT_U = 1;   /*2*/
   const int BLOCK_MAPPING = 8;
   const int WARP_SIZE = 64;
@@ -496,8 +513,21 @@ int main() {
   float *A = new float[M * K];
   float *B = new float[N * K];
   float *C = new float[N * M];
+  float *C_cpu = new float[N * M];
+  // for (int i = 0; i < M * K; i++) A[i] = (i % 8) * 0.1f;
+  // for (int i = 0; i < N * K; i++) B[i] = (i % 8) * 0.1f;
   for (int i = 0; i < M * K; i++) A[i] = 1.0f;
   for (int i = 0; i < N * K; i++) B[i] = 1.0f;
+  for (int i = 0; i < M; i++){
+    for (int j = 0; j < N; j++){
+      float numK = 0.0f;
+      for (int k = 0; k < K; k++){
+        numK += A[i * K + k] * B[k * N + j];
+      }
+      C_cpu[i * N + j] = numK;
+    }
+  }
+  
 
   float *DA, *DB, *DC;
   hipMalloc(&DA, M * K * sizeof(float));
@@ -508,6 +538,15 @@ int main() {
   
   dim3 grid_size((M/BM)*(N/BN));
   dim3 block_size(((BM/TM)*(BN/TN)) * LOCAL_SPLIT_U);
+
+  // warm up
+  matmul<BM, BN, BK, TM, TN, 
+      GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
+      BLOCK_LAYOUT_Y, BLOCK_LAYOUT_X,
+      WARP_LAYOUT_Y, WARP_LAYOUT_X, 
+      BLOCK_SCATTER_WIDTH_A, BLOCK_SCATTER_WIDTH_B, 
+      WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B,
+      LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
   std::vector<float> costs;
   for (int i=0; i<10; i++) {
@@ -539,13 +578,28 @@ int main() {
   hipMemcpy(C, DC, M * N * sizeof(float), hipMemcpyDeviceToHost);
   std::cout << "time cost: " << time << "ms\n";
   std::cout << "tflops: " << tflops << std::endl;
-  display(C, M * N);
-  // int num = 0;
-  // for (int i=0; i<M*N; i++) {
-  //   if (C[i] == 0.0) num++;
-  //   // printf("%.1f ", C[i]);
-  // }
-  // printf("%d\n", num);
+  // display(C, M * N);
+  printf("C: ");
+  for (int i = 0; i < 10; i++){
+    printf("%f ", C[i]);
+  }
+  printf("\n");
+  printf("C_cpu: ");
+  for (int i = 0; i < 10; i++){
+    printf("%f ", C_cpu[i]);
+  }
+  printf("\n");
+  
+  int num = 0;
+  printf("%f\n",C_cpu[0]);
+  for (int i = 0; i<M*N; i++) {
+    if (C[i] - C_cpu[i] < 1e-8) num++;
+  }
+  if(num == M*N){
+    printf("yes!\n");
+  }else{
+    printf("no!\n");
+  }
 
   hipFree(DA);
   hipFree(DB);
