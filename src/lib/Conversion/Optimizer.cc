@@ -97,6 +97,7 @@ mlir::AffineMap MatMulAffineMap::TempAToSMAMap(mlir::OpBuilder& builder,const Co
   exprs.push_back(coordX);
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
 }
+
 mlir::AffineMap MatMulAffineMap::GlboalBToTempBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg,int maxwidth){
   // GlboalAToTempAMap : [k+coordY][coordX] -> reg
   // i.e. [ivK, ty, BLOCKDIMX ,tx , BM, _maxwidth, ivCpyCount, THREAD_COUNT]
@@ -207,15 +208,74 @@ mlir::AffineMap MatMulAffineMap::TempToRegBMap(mlir::OpBuilder& builder,const Co
 }
 
 mlir::AffineMap MatMulAffineMap::SMAToTempMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
-  ;
+  // SMAToTempMap: [indexK][_y]
+  //  * dims : [tx,ty, tz, ivK , ivBK, ivWRX , ivThreadRepeatX,ivTHREAD_SCATTER_SIZE_X,
+  //              BN,WARPREPEATX,BLOCKDIMX, WARP_SIZE, BLOCK_LAYOUT_X , 
+  //              THREADREPEATX, THREAD_SCATTER_SIZE_X  ]
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+  auto tz = builder.getAffineDimExpr(dimCount++);
+  auto ivK = builder.getAffineDimExpr(dimCount++);
+  auto ivBK = builder.getAffineDimExpr(dimCount++);
+  auto ivWarpRepeatY = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadRepeatY = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadScatterSizeY = builder.getAffineDimExpr(dimCount++);
+  
+  auto tid = ty * cfg.THREAD_COUNT_X() + tx;
+  auto laneId = tid % cfg.WARP_SIZE;
+  auto warpId = tid.floorDiv(cfg.WARP_SIZE);
+  auto warpIdy = warpId.floorDiv(cfg.BLOCK_LAYOUT_X);
+  auto warpIndexY = cfg.BM / cfg.WARP_REPEAT_Y() * ivWarpRepeatY + (warpIdy*cfg.BM).floorDiv(cfg.BLOCK_LAYOUT_Y * cfg.WARP_REPEAT_Y()) ;
+  auto laneIdx = laneId % cfg.WARP_LAYOUT_X;
+  auto laneIdy = laneId.floorDiv(cfg.WARP_LAYOUT_X) ;
+  
+  auto indexK = ivK + ivBK + tz;
+
+  auto y_offs = cfg.BM / (cfg.WARP_REPEAT_Y() * cfg.THREAD_REPEAT_Y()) * ivThreadRepeatY + laneIdy * cfg.THREAD_SCATTER_SIZE_Y;
+  auto _y = warpIndexY + y_offs + ivThreadScatterSizeY;
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(indexK);
+  exprs.push_back(_y);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
 }
 
 mlir::AffineMap MatMulAffineMap::TempToRegAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
-  ;
+  // SMAToTempMap: [indexK][_y]
+  // dims : [ivK , ivBK , tz , yy_ + ivTSSY]
+  // TempToRegAMap : [_y] 
+  uint32_t dimCount = 0;
+  auto tx = builder.getAffineDimExpr(dimCount++);
+  auto ty = builder.getAffineDimExpr(dimCount++);
+
+  auto ivWarpRepeatY = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadRepeatY = builder.getAffineDimExpr(dimCount++);
+  auto ivThreadScatterSizeY = builder.getAffineDimExpr(dimCount++);
+  
+  auto tid = ty * cfg.THREAD_COUNT_X() + tx;
+  auto laneId = tid % cfg.WARP_SIZE;
+  auto warpId = tid.floorDiv(cfg.WARP_SIZE);
+  auto warpIdy = warpId.floorDiv(cfg.BLOCK_LAYOUT_X);
+  auto warpIndexY = cfg.BM / cfg.WARP_REPEAT_Y() * ivWarpRepeatY + (warpIdy*cfg.BM).floorDiv(cfg.BLOCK_LAYOUT_Y * cfg.WARP_REPEAT_Y()) ;
+  auto laneIdx = laneId % cfg.WARP_LAYOUT_X;
+  auto laneIdy = laneId.floorDiv(cfg.WARP_LAYOUT_X) ;
+
+  auto y_offs = cfg.BM / (cfg.WARP_REPEAT_Y() * cfg.THREAD_REPEAT_Y()) * ivThreadRepeatY + laneIdy * cfg.THREAD_SCATTER_SIZE_Y;
+  auto _y = warpIndexY + y_offs + ivThreadScatterSizeY;
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(_y);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
 }
 
 mlir::AffineMap MatMulAffineMap::ReduceRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
-  ;
+  int dimCount = 0;
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  // exprs.push_back(_y);
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  
 }
 
 
