@@ -1,19 +1,106 @@
 #include <vector>
-int vectorize_copy(float* from, float* to, int width){
-    // 向量化拷贝
-    return 0;
-}
 
 // 从列表里寻找下一个可用的validwidth 用于搬运 global->shm
-int nextValidWidth(int width){
-    std::vector<int> validInst = {8,4,2,1};
-    for(auto instWidth : validInst){
-        if(width >= instWidth){
+int nextValidInstWidth(int remain){
+    std::vector<int> validInstWidth = {8,4,2,1};
+    for(auto instWidth : validInstWidth){
+        if(remain >= instWidth){
             return instWidth;
         }
     }
     return 0;
 }
+
+void inst_vecCpy(float* from, float* to,int instwidth){
+    // 向量化读取的指令 如 flaot4读, float2读 等等
+}
+
+// 使用一连串 veccpy 指令将 targetWidth 长度的数据从 from 拷贝到 to。连续 veccpy 指令的宽度根据剩余长度自适应计算
+int vectorize_copy_with_sequence_inst(float* from, float* to, int targetWidth){
+    int remain = targetWidth;
+    int instWidth = nextValidInstWidth(remain);
+    while(remain > 0){
+        inst_vecCpy(from,to,instWidth);
+        from += instWidth;
+        to += instWidth;
+        remain -= instWidth;
+        instWidth = nextValidInstWidth(remain);
+    }
+}
+
+#define vectorize_copy_with_sequence_inst( from,  to, targetWidth)  \
+{   \
+    int remain = targetWidth;   \
+    int instWidth = nextValidInstWidth(remain); \
+    int offs = 0;   \
+    while(remain > 0){  \
+        inst_vecCpy(from + offs,to + offs,instWidth); \
+        offs += instWidth;  \
+        remain -= instWidth;    \
+        instWidth = nextValidInstWidth(remain); \
+    }   \
+}   \
+
+
+
+
+/**
+ * @brief 组拷贝：根据targetWidth和groupWidth，以及可用的instWidth进行向量化拷贝指令组合，将数据从from拷贝到to
+ * 
+ * @param from 从哪copy
+ * @param to copy到哪里
+ * @param groupWidth 用户设定。可以是任意值。但必须能够由 validInstWidth 组合成。且 targetWidth % groupWidth==0
+ * @param targetWidth 单个线程应该搬运的数字个数。通过总数据量/线程数 计算得到
+ * @return int 
+ */
+int group_copy(float* from, float* to, int groupWidth, int targetWidth, int THREAD_COUNT){
+    int count = targetWidth / groupWidth;  // 单个线程需要搬运几轮
+    int width = groupWidth;
+    if(count < 1){
+        // 轮数<1, 说明 groupWidth 超了。直接缩短为 targetWidth
+        width = targetWidth;
+        count = 1;
+    }
+    int stride = THREAD_COUNT * width;
+    for(int iv=0;iv<count;++iv){
+        from += iv * stride;
+        to += iv * stride;
+        int remain = width;  // 每轮应该拷贝的宽度
+        auto instWidth = nextValidInstWidth(remain);  // 寻找可用指令宽度
+        while(remain > 0 && instWidth > 0){
+            inst_vecCpy(from,to,instWidth);  // 插入真实的向量化拷贝指令
+            from += instWidth;  // addr ptr offset
+            to += instWidth;
+            remain -= instWidth;
+            instWidth = nextValidInstWidth(remain);
+        }
+    }
+}
+
+#define group_copy(from, to, groupWidth,  targetWidth, THREAD_COUNT)   \
+{   \
+    int count = targetWidth / groupWidth;   \ 
+    int width = groupWidth; \
+    if(count < 1){  \
+        width = targetWidth;    \
+        count = 1;  \
+    }   \
+    for(int ivLoad=0;ivLoad<count;++ivLoad){    \
+        from += ivLoad * THREAD_COUNT * width;  \
+        to += ivLoad * THREAD_COUNT * width;    \
+        int remain = width;    \
+        auto instWidth = nextValidInstWidth(remain);     \
+        while(remain > 0 && instWidth > 0){ \
+            inst_vecCpy(from,to,instWidth);      \
+            from += instWidth;    \
+            to += instWidth;    \
+            remain -= instWidth;    \
+            instWidth = nextValidInstWidth(remain); \
+        }   \
+    }   \
+}
+
+
 
 void sync(){  // hip 的线程同步函数
     ;
@@ -171,6 +258,7 @@ int main(){
     //                     C[indexI][indexJ] += A[indexI][indexK] * B[indexK][indexJ];
     //                 }
     //             }
+    
     //         }
     //     }
     //     // reg -> shm  ----c(lsu)
@@ -278,6 +366,7 @@ int main(){
     int ii = ty * TM, jj = tx * TN, kkk = tz * 1;  // [tx,ty,tz] < [BN/TN, BM/TM, SPLIT_U]
     int tid = ty * blockDimX + tx + tz * blockDimX * blockDimY;
 
+
     int laneId = tid % WARP_SIZE;
     int warpId = tid / WARP_SIZE;
     int warpIdx = warpId % BLOCK_LAYOUT_X;
@@ -307,35 +396,51 @@ int main(){
         // globalA->shmA
         int GlobalLoadTargetWidthA = BM*BK/THREAD_COUNT;  // 每个线程应该搬运多少数字
         int loadCountA = GlobalLoadTargetWidthA / GLOBAL_LOAD_WIDTH_A;
+        int _widthA = GLOBAL_LOAD_WIDTH_A;
+        if(loadCountA < 1){
+            _widthA = GlobalLoadTargetWidthA;
+            loadCountA = 1;
+        }
         for(int ila = 0;ila < loadCountA;++ila)
         {
-            int remain = GLOBAL_LOAD_WIDTH_A;
-            while (remain > 0)
+            int threadNeedsPerLine = BM / _widthA;
+            auto virtualTid = tid + ila * THREAD_COUNT;
+            int coordX = virtualTid % threadNeedsPerLine;
+            int coordY = virtualTid / threadNeedsPerLine;
+            int remain = _widthA;
+            int instwidth = nextValidInstWidth(remain);
+            int __x = coordX;
+            while (remain > 0 && instwidth > 0)
             {
-                int width = nextValidWidth(remain);
-                remain -= width;
-                int threadNeedsPerLine = BM / width;
-                auto virtualTid = tid + ila * THREAD_COUNT;
-                int coordX = virtualTid % threadNeedsPerLine;
-                int coordY = virtualTid / threadNeedsPerLine;
-                vectorize_copy(&A[k+coordY][coordX] , &smA[coordY][coordX], width);
+                inst_vecCpy(&A[k+coordY][__x] , &smA[coordY][__x], instwidth);
+                remain -= instwidth;
+                instwidth = nextValidInstWidth(remain);
+                __x += instwidth;
             }
         }
         // globalb->shmB
         int GlobalLoadTargetWidthB = BN*BK/THREAD_COUNT;  // 每个线程应该搬运多少数字
         int loadCountB = GlobalLoadTargetWidthB / GLOBAL_LOAD_WIDTH_B;
+        int widthB = GLOBAL_LOAD_WIDTH_B;
+        if(loadCountB < 0){
+            widthB = GlobalLoadTargetWidthB;
+            loadCountB = 1;
+        }
         for(int ilb = 0;ilb < loadCountB;++ilb)
         {
-            int remain = GLOBAL_LOAD_WIDTH_B;
-            while (remain > 0)
+            int threadNeedsPerLine = BN / widthB;
+            auto virtualTid = tid + ilb * THREAD_COUNT;
+            int coordX = virtualTid % threadNeedsPerLine;
+            int coordY = virtualTid / threadNeedsPerLine;
+            int remain = widthB;
+            int instwidth = nextValidInstWidth(remain);
+            int __x = coordX;
+            while (remain > 0 && instwidth > 0)
             {
-                int width = nextValidWidth(remain);
-                remain -= width;
-                int threadNeedsPerLine = BM / width;
-                auto virtualTid = tid + ilb * THREAD_COUNT;
-                int coordX = virtualTid % threadNeedsPerLine;
-                int coordY = virtualTid / threadNeedsPerLine;
-                vectorize_copy(&A[k+coordY][coordX] , &smA[coordY][coordX], width);
+                inst_vecCpy(&B[k+coordY][__x] , &smB[coordY][__x], instwidth);
+                remain -= instwidth;
+                instwidth = nextValidInstWidth(remain);
+                __x += instwidth;
             }
         }
  
@@ -431,7 +536,7 @@ int main(){
                             int _yreg = n + ivThreadRepeatY * THREAD_SCATTER_SIZE_Y + wj * WSSY;
                             int _xreg = 0 + ivTRX * THREAD_SCATTER_SIZE_X + wi * WSSX;
                             // smC[_y + u*BM][_x] = regC[_yreg][_xreg] ;
-                            vectorize_copy(&regC[_yreg][_xreg], &smC[_y + u*BM][_x],THREAD_SCATTER_SIZE_X);
+                            vectorize_copy_with_sequence_inst(&regC[_yreg][_xreg], &smC[_y + u*BM][_x],THREAD_SCATTER_SIZE_X);
                         }
                     // }
                 }
@@ -441,10 +546,11 @@ int main(){
     sync();  // 等待所有partsum 写入到smC 完成
     // 至此，smC = (BM*SPLIT_U) * BN, 存满了部分和. smC的单个U对应C上整块连续的部分
     // reduce smC(线程顺着依次计算单个U的内容)
+
     int smCLoadTargetWidth = BM * BN / THREAD_COUNT;  // 每个线程应该计算多少 == TM*TN / SPLIT_U
-    int SMC_LOAD_CFG_WIDTH = 4;  // 每个线程设定的搬运的最大宽度
-    int smCloadCount = smCLoadTargetWidth / SMC_LOAD_CFG_WIDTH;  // 全部thread总共需要搬运几次
-    int width = SMC_LOAD_CFG_WIDTH;
+    int GLOBAL_STORE_WIDTH = 4;  // 每个线程设定的搬运的最大宽度
+    int smCloadCount = smCLoadTargetWidth / GLOBAL_STORE_WIDTH;  // 全部thread总共需要搬运几次
+    int width = GLOBAL_STORE_WIDTH;
     if(smCloadCount < 0){
         smCloadCount = 1; width = smCLoadTargetWidth;
     }
@@ -452,13 +558,16 @@ int main(){
     float* tempC = new float[smCLoadTargetWidth];
     for(int iu=0;iu < SPLIT_U;++iu){
         int ic = 0;
-        while(width > 0){
-            width = nextValidWidth(width);
+        int remain = smCLoadTargetWidth;
+        while(remain > 0){
+            width = nextValidInstWidth(remain);
+            remain -= width;
             for(int ilc = 0;ilc < smCloadCount;++ilc){
                 auto vtid = tid + ilc * THREAD_COUNT;
                 int y = BN / (tid / width);
                 int x = BN % (tid / width);
-                vectorize_copy(&smC[y+iu*BM][x],tempC,width);
+                inst_vecCpy(&smC[y+iu*BM][x], tempC + ic, width);
+                // 累加。放到这里可以起到 访存-计算 交叉排布的效果，提高并行度
                 for(int i=0;i<smCLoadTargetWidth;++i){
                     regC[i+ic] += tempC[i+ic];  // 将regC 一维化
                 }
@@ -470,11 +579,10 @@ int main(){
     // 写回 globalC
     int y = BN / (tid / smCLoadTargetWidth) + by * BM;
     int x = BN % (tid / smCLoadTargetWidth) + bx * BN;
-    vectorize_copy(regC,&C[y][x],smCLoadTargetWidth);
-
     
-
-
+    group_copy(regC, &C[y][x], GLOBAL_STORE_WIDTH, smCLoadTargetWidth, THREAD_COUNT);
+    // vectorize_copy(regC, &C[y][x], smCLoadTargetWidth);  // 按照 smCLoadTargetWidth 的宽度拷贝入C。按照指令允许的width可能分多次进行
+    
 
 
 #endif
@@ -484,3 +592,10 @@ int main(){
     
     return 0;
 }
+
+
+
+// 先定下 pipeline
+//（pass的变换过程）
+// pipeline只能顺序开发—— optimize 。顺序开发 无法验证 中间IR 
+// 朴素IR -> 

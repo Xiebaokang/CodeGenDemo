@@ -49,11 +49,11 @@ int64_t smAReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutN, i
   return (warpNum / blockLayoutN) * warpLayoutM;
 }
 
-
 int64_t smBReadSride(int64_t blockDim, int64_t warpSize, int64_t blockLayoutM, int64_t warpLayoutN) {
   int64_t warpNum = blockDim / warpSize;
   return (warpNum / blockLayoutM) * warpLayoutN;
 }
+
 
 mlir::AffineMap MatMulAffineMap::GlboalAToTempAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg, int maxwidth){
   // GlboalAToTempAMap : [k+coordY][coordX] -> reg
@@ -242,6 +242,7 @@ mlir::AffineMap MatMulAffineMap::SMAToTempMap(mlir::OpBuilder& builder,const Con
 
 }
 
+
 mlir::AffineMap MatMulAffineMap::TempToRegAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
   // SMAToTempMap: [indexK][_y]
   // dims : [ivK , ivBK , tz , yy_ + ivTSSY]
@@ -270,14 +271,23 @@ mlir::AffineMap MatMulAffineMap::TempToRegAMap(mlir::OpBuilder& builder,const Co
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
 }
 
-mlir::AffineMap MatMulAffineMap::ReduceRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg){
-  int dimCount = 0;
-  llvm::SmallVector<mlir::AffineExpr> exprs;
-  // exprs.push_back(_y);
-  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+mlir::AffineMap MatMulAffineMap::RegCToSMCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg)
+{
+  // vectorize_copy(&regC[_yreg][_xreg], &smC[_y + u*BM][_x],THREAD_SCATTER_SIZE_X);
   
 }
+mlir::AffineMap MatMulAffineMap::SMCToTmpvalMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg)
+{
 
+}
+mlir::AffineMap MatMulAffineMap::ReduceToRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg)
+{
+
+}
+mlir::AffineMap MatMulAffineMap::RegCToGlobalCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg)
+{
+
+}
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
   auto dim0 = builder.getAffineDimExpr(0);

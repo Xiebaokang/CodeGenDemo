@@ -69,7 +69,14 @@ struct MatMulAffineMap {
   // tempVal->reg
   static mlir::AffineMap TempToRegBMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
   static mlir::AffineMap TempToRegAMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
-  static mlir::AffineMap ReduceRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  // regC->shmC
+  static mlir::AffineMap RegCToSMCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  // shmC->tempVal
+  static mlir::AffineMap SMCToTmpvalMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  // add tempVal to regC
+  static mlir::AffineMap ReduceToRegCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
+  // regC->global C
+  static mlir::AffineMap RegCToGlobalCMap(mlir::OpBuilder& builder,const ConfigMatmul& cfg);
 };
 
 }  // KernelCodeGen
