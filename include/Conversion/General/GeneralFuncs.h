@@ -24,7 +24,8 @@ memrefAllocOp createAllocOp(mlir::OpBuilder builder, llvm::SmallVector<int64_t> 
 
 void replaceAndErase(mlir::Operation* newOp, mlir::Operation* oldOp);
 
-void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index=0, bool isBegin=true);
+// void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index=0, bool isBegin=true);
+void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index=0);
 
 template <typename memrefAllocOp>
 void eraseForOpIterVar(mlir::OpBuilder builder, mlir::affine::AffineForOp &forOp, memrefAllocOp allocOp, llvm::SmallVector<mlir::Value> bufVars) {
@@ -88,6 +89,8 @@ innermostOp getInnerMostOp(innermostOp imop) {
     }
   }
 }
+
+int getOpIndex(mlir::Operation* haveBlockOp, mlir::Operation* targetOp);
 
 std::set<mlir::Operation*> getValueUsers(mlir::Value var);
 

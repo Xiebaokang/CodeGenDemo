@@ -10,7 +10,7 @@ namespace KernelCodeGen {
 mlir::OpBuilder getBuilder(mlir::Operation* op, Position pos) {
   // 按照位置和op创建builder
   switch (pos){
-  case Position::after:
+  case Position::after
   {
     mlir::OpBuilder builder(op->getContext());
     builder.setInsertionPointAfter(op);
@@ -49,19 +49,40 @@ void replaceAndErase(mlir::Operation* newOp, mlir::Operation* oldOp) {
   oldOp->erase();
 }
 
-void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index, bool isBegin) {
+// void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index, bool isBegin) {
+//   // 将 oldOp 中的 ops 转到 newOp 中，index决定转移newOp的位置
+//     auto& newOpOperations = newOp->getRegion(0).front().getOperations();
+//     auto& oldOpOperations = oldOp->getRegion(0).front().getOperations();
+//     llvm::iplist<mlir::Operation>::iterator it;
+//     if (isBegin) {
+//       it = newOpOperations.begin();
+//     } else {
+//       it = newOpOperations.end();
+//     }
+//     std::advance(it, index);
+//     newOpOperations.splice(it, oldOpOperations);
+// }
+
+void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index) {
   // 将 oldOp 中的 ops 转到 newOp 中，index决定转移newOp的位置
     auto& newOpOperations = newOp->getRegion(0).front().getOperations();
     auto& oldOpOperations = oldOp->getRegion(0).front().getOperations();
-    llvm::iplist<mlir::Operation>::iterator it;
-    if (isBegin) {
-      it = newOpOperations.begin();
-    } else {
-      it = newOpOperations.end();
-    }
+    llvm::iplist<mlir::Operation>::iterator it = newOpOperations.begin();
     std::advance(it, index);
     newOpOperations.splice(it, oldOpOperations);
 }
+
+int getOpIndex(mlir::Operation* haveBlockOp, mlir::Operation* targetOp) {
+  // 找到op在block中的index
+  auto& ops = haveBlockOp->getRegion(0).front().getOperations();
+  int index = -1;
+  for (auto& op : ops) {
+    index++;
+    if (&op == targetOp) return index;
+  }
+  return -1;
+}
+
 
 std::set<mlir::Operation*> getValueUsers(mlir::Value var) {
   // 获取value的使用者
