@@ -15,13 +15,13 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
 
 mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &hasIterLoop, std::vector<mlir::affine::AffineForOp> &loops);
 
-void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp parallelOp);
-
 void reorder(const std::vector<mlir::affine::AffineForOp> &forOp);
 
 mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp> &forOp);
 
-mlir::affine::AffineParallelOp parallelToOneDim(mlir::affine::AffineParallelOp parallelOp);
+void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp &parallelOp);
+
+void parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp);
 
 template <typename ParentOpType>
 mlir::Value alloc_buffer(

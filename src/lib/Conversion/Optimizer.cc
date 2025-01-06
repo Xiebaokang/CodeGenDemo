@@ -103,36 +103,35 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto k_axes = Rewriter::split(loopK, 3, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_K"]});
     auto k_outer = k_axes[0], k_mider = k_axes[1], k_inner = k_axes[2];
     LOG_DEBUG("===== after split =======\n",module);
-    LOG_DEBUG("===== after loop =======\n",k_inner);
 
     Rewriter::loopToParallelZ(k_inner, blockLevel);
     LOG_DEBUG("===== after loopToParallelZ =======\n",module);
-    // Rewriter::reorder({loopK, m_inner, n_inner});
+    Rewriter::reorder({k_outer, k_mider, m_inner, n_inner});
+    LOG_DEBUG("===== after reorder =======\n",module);
 
-    // auto k_axes = Rewriter::split(loopK, 2, {config["BLOCK_SIZE_K"]});
-    // auto k_outer = k_axes[0], k_inner = k_axes[1];
-
-    // int64_t blockThreads;
-    // auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
+    int64_t blockThreads;
+    auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
     
     // // size of loading from glob to reg
-    // auto ldgASize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;
-    // auto ldgBSize = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;
-    // auto elementA = A.getType().dyn_cast<mlir::MemRefType>().getElementType();
-    // auto elementB = B.getType().dyn_cast<mlir::MemRefType>().getElementType();
-    // auto fragB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_N"]}, elementB);
-    // auto fragA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"]}, elementA);
+    auto glob_load_total_width_a = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;
+    auto glob_load_total_width_b = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;
+    auto elementA = A.getType().dyn_cast<mlir::MemRefType>().getElementType();
+    auto elementB = B.getType().dyn_cast<mlir::MemRefType>().getElementType();
+    auto regB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_N"]}, elementB);
+    auto regA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"]}, elementA);
 
-    // auto tileB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {ldgBSize}, elementB);
-    // auto tileA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {ldgASize}, elementA);
-    // auto smB = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_N"]}, elementB);
-    // auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
-    // LOG_DEBUG("===== before alloc_buffer =======\n",module);
+    auto tempB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {glob_load_total_width_b}, elementB);
+    auto tempA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {glob_load_total_width_a}, elementA);
+    auto smB = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_N"]}, elementB);
+    auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
+    LOG_DEBUG("===== before alloc_buffer =======\n",module);
 
-    // Rewriter::parallelToOneDim(gridLevel);
+    Rewriter::parallelToOneDim(gridLevel);
+    Rewriter::parallelToOneDim(blockLevel);
+    LOG_DEBUG("===== before parallelToOneDim =======\n",module);
     
-    // auto blockIdx = Analyzer::getParallelIdx(gridLevel);
-    // auto threadIdx = Analyzer::getParallelIdx(blockLevel);
+    auto blockIdx = Analyzer::getParallelIdx(gridLevel);
+    auto threadIdx = Analyzer::getParallelIdx(blockLevel);
     
     // auto loadTileAMap = getAffineMap("loadTileA", builder, config);
     // auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 

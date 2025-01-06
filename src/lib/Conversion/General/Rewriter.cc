@@ -8,14 +8,12 @@
 namespace KernelCodeGen {
 namespace Rewriter {
 
-mlir::Value _inner_alloc_buffer(mlir::OpBuilder &builder, mlir::MemRefType &type)
-{
+mlir::Value _inner_alloc_buffer(mlir::OpBuilder &builder, mlir::MemRefType &type) {
   if (type.getMemorySpaceAsInt() == int(KernelCodeGen::MemorySpace::local)){
     return builder.create<mlir::memref::AllocaOp>(builder.getUnknownLoc(), type)->getResult(0);
   }
   return builder.create<mlir::memref::AllocOp>(builder.getUnknownLoc(), type);
 }
-
 
 void OpSetDesc(mlir::Operation* op, const std::string& attrValue){
   mlir::OpBuilder b(op->getContext());
@@ -108,7 +106,7 @@ mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &carryVarLoop, std::
   return allocOp.getResult();
 }
 
-void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp parallelOp) {
+void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp &parallelOp) {
   // loop add to parallel
 
   llvm::SmallVector<mlir::AffineMap> lbMaps;
@@ -154,13 +152,13 @@ void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParalle
 
   // erase loop
   auto parentOp = loop.getOperation()->getParentOp();
-  // llvm::outs() << "parent: \n" << *parentOp << "\n";
   int index = getOpIndex(parentOp, loop);
-  // llvm::outs() << "index: " << index << "\n";
   loop.getBody()->back().erase();
   spliceHaveBlockOp(parentOp, loop, index);
   loop.getInductionVar().replaceAllUsesWith(newIVs[0]);
   loop.erase();
+
+  parallelOp = newParallelOp;
 }
  
 // Swap two nested loops.
@@ -363,13 +361,16 @@ mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineFo
   return parallelOp;
 }
 
-mlir::affine::AffineParallelOp parallelToOneDim(mlir::affine::AffineParallelOp parallelOp) {
+void parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp) {
   // 将parallelOp转成一维表示
+  std::vector<int64_t> uppers;
   auto builder = getBuilder(parallelOp, Position::before);
   int64_t upperBound = 1;
   for (auto i : parallelOp.getUpperBoundsMap().getConstantResults()) {
     upperBound *= i;
+    uppers.push_back(i);
   }
+  // create new parallelOp
   auto lowerMap = mlir::AffineMap::get(0, 0, llvm::ArrayRef<mlir::AffineExpr>(builder.getAffineConstantExpr(0)), builder.getContext());
   auto upperMap = mlir::AffineMap::get(0, 0, llvm::ArrayRef<mlir::AffineExpr>(builder.getAffineConstantExpr(upperBound)), builder.getContext());
   mlir::affine::AffineParallelOp newOp = builder.create<mlir::affine::AffineParallelOp>(
@@ -377,12 +378,40 @@ mlir::affine::AffineParallelOp parallelToOneDim(mlir::affine::AffineParallelOp p
     llvm::ArrayRef<mlir::AffineMap>(lowerMap), mlir::ValueRange({}),
     llvm::ArrayRef<mlir::AffineMap>(upperMap), mlir::ValueRange({}),
     llvm::ArrayRef<int64_t>({1}));
-  spliceHaveBlockOp(newOp, parallelOp);
-  // replaceAndErase();
 
-  llvm::outs() << newOp << "\n";
-  llvm::outs() << lowerMap << "   " << upperMap << "\n";
-  return nullptr;
+  // create new maps
+  llvm::SmallVector<mlir::AffineMap> maps;
+  builder.setInsertionPointToStart(newOp.getBody());
+  mlir::AffineExpr tid = builder.getAffineDimExpr(0);
+  int64_t front = 1;
+  for (int i=1; i<uppers.size(); i++) {
+    int64_t sum = 1;
+    for (int j=i; j<uppers.size(); j++) { 
+      sum *= uppers[j]; 
+    }
+    maps.push_back(mlir::AffineMap::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(tid.floorDiv(sum)), builder.getContext()));
+    tid = tid % sum;
+    if (i == uppers.size() - 1) {
+      maps.push_back(mlir::AffineMap::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(tid), builder.getContext()));
+    }
+  }
+
+  // create affineApplyOp
+  llvm::SmallVector<mlir::Value> newIVs;
+  for (auto map : maps) {
+    auto axesApplyOp = builder.create<mlir::affine::AffineApplyOp>(builder.getUnknownLoc(), map, mlir::ValueRange(newOp.getIVs()));
+    newIVs.push_back(axesApplyOp.getResult());
+  }
+
+  // move
+  parallelOp.getBody()->back().erase();
+  spliceHaveBlockOp(newOp, parallelOp, maps.size());
+  auto oldIVs = parallelOp.getIVs();
+  for (int i=0; i<oldIVs.size(); i++) {
+    oldIVs[i].replaceAllUsesWith(newIVs[i]);
+  }
+  parallelOp.erase();
+  parallelOp = newOp;
 }
 
 // dst is register.

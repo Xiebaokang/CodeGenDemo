@@ -247,7 +247,7 @@ int main(){
     // }
   };
   std::vector<std::string> names = {"GEMM_testKernel"};
-  auto result = testConfigs(configs,names);
+  auto result = testConfigs(configs, names);
   return 0;
 }
 

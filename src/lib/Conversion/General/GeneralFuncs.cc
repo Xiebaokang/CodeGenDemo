@@ -10,7 +10,7 @@ namespace KernelCodeGen {
 mlir::OpBuilder getBuilder(mlir::Operation* op, Position pos) {
   // 按照位置和op创建builder
   switch (pos){
-  case Position::after
+  case Position::after:
   {
     mlir::OpBuilder builder(op->getContext());
     builder.setInsertionPointAfter(op);
@@ -49,20 +49,6 @@ void replaceAndErase(mlir::Operation* newOp, mlir::Operation* oldOp) {
   oldOp->erase();
 }
 
-// void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index, bool isBegin) {
-//   // 将 oldOp 中的 ops 转到 newOp 中，index决定转移newOp的位置
-//     auto& newOpOperations = newOp->getRegion(0).front().getOperations();
-//     auto& oldOpOperations = oldOp->getRegion(0).front().getOperations();
-//     llvm::iplist<mlir::Operation>::iterator it;
-//     if (isBegin) {
-//       it = newOpOperations.begin();
-//     } else {
-//       it = newOpOperations.end();
-//     }
-//     std::advance(it, index);
-//     newOpOperations.splice(it, oldOpOperations);
-// }
-
 void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index) {
   // 将 oldOp 中的 ops 转到 newOp 中，index决定转移newOp的位置
     auto& newOpOperations = newOp->getRegion(0).front().getOperations();
@@ -82,7 +68,6 @@ int getOpIndex(mlir::Operation* haveBlockOp, mlir::Operation* targetOp) {
   }
   return -1;
 }
-
 
 std::set<mlir::Operation*> getValueUsers(mlir::Value var) {
   // 获取value的使用者
@@ -169,6 +154,24 @@ std::vector<int64_t> getOptVectorizeGroup(int64_t width) {
   return group;
 }
 
-
+mlir::affine::AffineForOp load(mlir::OpBuilder builder, mlir::Value src, mlir::Value dst, mlir::AffineMap srcMap, mlir::AffineMap dstMap, 
+                               llvm::SmallVector<mlir::Value> srcOperands, llvm::SmallVector<mlir::Value> dstOperands, 
+                               int64_t loadWidth, int loadTimes) {
+  // 两个buffer读取数据
+  auto group = getOptVectorizeGroup(loadWidth);
+  auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
+  auto loadBody = [&](mlir::OpBuilder &b, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
+    mlir::OpBuilder::InsertionGuard nestedGuard(b);
+    dstOperands.push_back(iv);
+    for (auto w : group) {
+      auto vectorType = mlir::VectorType::get(w, dstType.getElementType());
+      auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, srcMap, srcOperands);
+      builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, dstMap, dstOperands);
+    }
+    b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
+  };
+  auto load = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, loadTimes, 1, mlir::ValueRange({}), loadBody);
+  return load;
+}
 
 }

@@ -24,7 +24,7 @@ memrefAllocOp createAllocOp(mlir::OpBuilder builder, llvm::SmallVector<int64_t> 
 
 void replaceAndErase(mlir::Operation* newOp, mlir::Operation* oldOp);
 
-// void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index=0, bool isBegin=true);
+
 void spliceHaveBlockOp(mlir::Operation* newOp, mlir::Operation* oldOp, int index=0);
 
 template <typename memrefAllocOp>
@@ -132,6 +132,11 @@ int replaceIndexWithExpr(mlir::Value oldIv, std::vector<mlir::Value>& newIvs, Af
 }
 
 std::vector<int64_t> getOptVectorizeGroup(int64_t width);
+
+
+mlir::affine::AffineForOp load(mlir::OpBuilder builder, mlir::Value src, mlir::Value dst, mlir::AffineMap srcMap, mlir::AffineMap dstMap, 
+                               llvm::SmallVector<mlir::Value> srcOperands, llvm::SmallVector<mlir::Value> dstOperands, 
+                               int64_t loadWidth, int loadTimes);
 
 }
 
