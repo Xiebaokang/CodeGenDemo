@@ -28,17 +28,17 @@ struct CompareFunc {
   }
 };
 
+namespace Analyzer {
+  std::vector<int64_t> getParallelNumber(mlir::affine::AffineParallelOp parallelLevel, int64_t& totalNumber);
+  std::vector<mlir::func::FuncOp> collectFunctions(mlir::ModuleOp& module, const std::string& targetFuncName = {""});
+  std::vector<mlir::affine::AffineForOp> collectFuncLoops(mlir::func::FuncOp funcOp);
+  std::set<std::string> collectFuncNames(mlir::ModuleOp& module);
+  int getThreadsPerCTA(mlir::ModuleOp module); 
 
-struct Analyzer {
-  Analyzer() = default;
-
-  static std::vector<int64_t> getParallelNumber(mlir::affine::AffineParallelOp parallelLevel, int64_t& totalNumber);
-  static std::vector<mlir::func::FuncOp> collectFunctions(mlir::ModuleOp& module, const std::string& targetFuncName = {""});
-  static std::vector<mlir::affine::AffineForOp> collectFuncLoops(mlir::func::FuncOp funcOp);
-  static std::set<std::string> collectFuncNames(mlir::ModuleOp& module);
-  
-  static int getThreadsPerCTA(mlir::ModuleOp module); 
-};
+  std::vector<mlir::Value> getParallelIdx(mlir::affine::AffineParallelOp parallelLevel);
+  mlir::affine::AffineForOp findRootLoop(mlir::Operation* op);
+  mlir::Block* getClostScopeOp(mlir::Operation* op);
+}
 
 }  // KernelCodeGen
 
