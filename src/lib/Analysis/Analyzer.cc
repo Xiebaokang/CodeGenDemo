@@ -21,6 +21,15 @@ std::vector<mlir::func::FuncOp> collectFunctions(mlir::ModuleOp& module, const s
   return std::move(result);
 }
 
+int64_t getThreadPerBlock(mlir::affine::AffineParallelOp parallelLevel) {
+  // 获取block的线程数量
+  int64_t threadSum = 1;
+  for (auto i : parallelLevel.getUpperBoundsMap().getConstantResults()) {
+    threadSum *= i;
+  }
+  return threadSum;
+}
+
 std::vector<int64_t> getParallelNumber(mlir::affine::AffineParallelOp parallelLevel, int64_t& totalNumber) {
   auto dim = parallelLevel.getNumDims();
   totalNumber = 1;

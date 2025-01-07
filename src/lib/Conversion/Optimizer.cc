@@ -44,6 +44,7 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   auto dim5 = builder.getAffineDimExpr(5);
   auto dim6 = builder.getAffineDimExpr(6);
   auto dim7 = builder.getAffineDimExpr(7);
+  auto dim8 = builder.getAffineDimExpr(8);
 
   const int& BM = config[KEY_BLOCK_SIZE_M]; 
   const int& BN = config[KEY_BLOCK_SIZE_N]; 
@@ -51,23 +52,134 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   const int& TM = config[KEY_THREAD_SIZE_M];
   const int& TN = config[KEY_THREAD_SIZE_N];
 
+  const int BLOCK_Y = BM / TM;
+  const int BLOCK_X = BN / TN;
+  const int THREAD_NUM = BLOCK_X * BLOCK_Y * config["LOCAL_SPLIT_U"];
+  const int SHARED_SIZE_A = BM * BK;
+  const int SHARED_SIZE_B = BN * BK;
 
-  if (mapIdentifier == "loadTileA") {
-    
-  } else if (mapIdentifier == "loadTileB") {
-    
-  } else if (mapIdentifier == "storeTileA") {
-    
-  } else if (mapIdentifier == "storeTileB") {
-    
-  } else if (mapIdentifier == "loadFragA") {
-    
-  } else if (mapIdentifier == "loadFragB") {
-    
+  // glob -> reg -> shared 
+  // const int GLOB_LOAD_NUM_A = SHARED_SIZE_A / THREAD_NUM / config["GLOB_LOAD_WIDTH_A"];
+  // const int GLOB_LOAD_NUM_B = SHARED_SIZE_B / THREAD_NUM / config["GLOB_LOAD_WIDTH_B"];
+  const int GLOB_LOAD_ROW_WIDTH_A = THREAD_NUM / BK * config["GLOB_LOAD_WIDTH_A"];
+  const int GLOB_LOAD_ROW_WIDTH_B = THREAD_NUM / BK * config["GLOB_LOAD_WIDTH_B"];
+
+  // shared -> reg
+  const int BLOCK_REPEAT_A = TM / config["BLOCK_SCATTER_WIDTH_A"];
+  const int WARP_REPEAT_A = config["BLOCK_SCATTER_WIDTH_A"] / config["WARP_SCATTER_WIDTH_A"];
+  const int BLOCK_REPEAT_B = TN / config["BLOCK_SCATTER_WIDTH_B"];
+  const int WARP_REPEAT_B = config["BLOCK_SCATTER_WIDTH_B"] / config["WARP_SCATTER_WIDTH_B"];
+
+  // reduce C (sharedC to regC)
+  const int GLOB_STORE_ROW_WIDTH = THREAD_NUM / BM * config["GLOB_STORE_WIDTH"];
+
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  if (mapIdentifier == "loadTileA" || mapIdentifier == "loadTileB") {
+    // ***** load glob to temp reg *****
+    auto sh_load_row = dim0.floorDiv((THREAD_NUM / BK));
+    auto sh_load_col = dim0 % (THREAD_NUM / BK);
+    if (mapIdentifier == "loadTileA") {
+      // A[sh_load_row + k][(by * BM) + (iter * GLOB_LOAD_ROW_WIDTH_A) + (sh_load_col * GLOB_LOAD_WIDTH_A)]
+      exprs.push_back(sh_load_row + dim1);
+      exprs.push_back(dim2 * BM + dim3 * GLOB_LOAD_ROW_WIDTH_A + sh_load_col * config["GLOB_LOAD_WIDTH_A"]);
+    } else {
+      // B[sh_load_row + k][(bx * BN) + (iter * GLOB_LOAD_ROW_WIDTH_B) + (sh_load_col * GLOB_LOAD_WIDTH_B)]
+      exprs.push_back(sh_load_row + dim1);
+      exprs.push_back(dim2 * BN + dim3 * GLOB_LOAD_ROW_WIDTH_B + sh_load_col * config["GLOB_LOAD_WIDTH_B"]);
+    }
+    return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  } else if (mapIdentifier == "storeTileA" || mapIdentifier == "storeTileB") {
+    // ***** load temp reg to shared *****
+    auto sh_load_row = dim0.floorDiv((THREAD_NUM / BK));
+    auto sh_load_col = dim0 % (THREAD_NUM / BK);
+    if (mapIdentifier == "storeTileA") {
+      // sh_A[sh_load_row][(iter * GLOB_LOAD_ROW_WIDTH_A) + (sh_load_col * GLOB_LOAD_WIDTH_A)]
+      exprs.push_back(sh_load_row);
+      exprs.push_back(dim1 * GLOB_LOAD_ROW_WIDTH_A + sh_load_col * config["GLOB_LOAD_WIDTH_A"]);
+    } else {
+      // sh_B[sh_load_row][(iter * GLOB_LOAD_ROW_WIDTH_B) + (sh_load_col * GLOB_LOAD_WIDTH_B)]
+      exprs.push_back(sh_load_row);
+      exprs.push_back(dim1 * GLOB_LOAD_ROW_WIDTH_B + sh_load_col * config["GLOB_LOAD_WIDTH_B"]);
+    }
+    return mlir::AffineMap::get(/*dimCount*/2, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  } else if (mapIdentifier == "loadFragA" || mapIdentifier == "loadFragB") {
+    // ***** load shared to reg *****
+    // thread idx
+    auto tz = dim1.floorDiv(BLOCK_X * BLOCK_Y);
+    auto tid_other = dim1 % (BLOCK_X * BLOCK_Y);
+    // thread mapping
+    auto warp_id = tid_other.floorDiv(config["WARP_SIZE"]);
+    auto lane_id = tid_other % config["WARP_SIZE"];
+    auto warp_y = warp_id.floorDiv(config["BLOCK_LAYOUT_X"]);
+    auto warp_x = warp_id % config["BLOCK_LAYOUT_X"];
+    auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
+    auto lane_x = lane_id % config["WARP_LAYOUT_X"];
+    if (mapIdentifier == "loadFragA") {
+      // sh_A[bk + tz][(i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]
+      exprs.push_back(dim0 + tz);
+      exprs.push_back((dim2 * config["BLOCK_LAYOUT_Y"] + warp_y) * config["WARP_LAYOUT_Y"] * config["BLOCK_SCATTER_WIDTH_A"] + 
+                      (dim3 * config["WARP_LAYOUT_Y"] + lane_y) * config["WARP_SCATTER_WIDTH_A"]);
+    } else {
+      // sh_B[bk + tz][(i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]
+      exprs.push_back(dim0 + tz);
+      exprs.push_back((dim2 * config["BLOCK_LAYOUT_X"] + warp_x) * config["WARP_LAYOUT_X"] * config["BLOCK_SCATTER_WIDTH_B"] + 
+                      (dim3 * config["WARP_LAYOUT_X"] + lane_x) * config["WARP_SCATTER_WIDTH_B"]);
+    }
+    return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheReadA" || mapIdentifier == "cacheReadB") {
-    
+    // ***** count result & store to regC *****
+    exprs.push_back(dim0);
+    return mlir::AffineMap::get(/*dimCount*/1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheWriteC") {
-    
+    // ***** load regC to globC *****
+    // thread mapping
+    auto warp_id = dim2.floorDiv(config["WARP_SIZE"]);
+    auto lane_id = dim2 % config["WARP_SIZE"];
+    auto warp_y = warp_id.floorDiv(config["BLOCK_LAYOUT_X"]);
+    auto warp_x = warp_id % config["BLOCK_LAYOUT_X"];
+    auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
+    auto lane_x = lane_id % config["WARP_LAYOUT_X"];
+    // C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k)]
+    //  [bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]]
+    exprs.push_back(dim0 * BM + (dim3 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["BLOCK_SCATTER_WIDTH_A"]) + 
+                                (dim4 * config["WARP_LAYOUT_Y"]) + (lane_y * config["WARP_SCATTER_WIDTH_A"]) + dim5);
+    exprs.push_back(dim1 * BN + (dim6 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["BLOCK_SCATTER_WIDTH_B"]) + 
+                                (dim7 * config["WARP_LAYOUT_X"]) + (lane_x * config["WARP_SCATTER_WIDTH_B"]) + dim8);
+    return mlir::AffineMap::get(/*dimCount*/9, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  } else if (mapIdentifier == "cacheWriteShC") {
+    // load regC to sharedC
+    // thread idx
+    auto tz = dim0.floorDiv(BLOCK_X * BLOCK_Y);
+    auto tid_other = dim0 % (BLOCK_X * BLOCK_Y);
+    // thread mapping
+    auto warp_id = tid_other.floorDiv(config["WARP_SIZE"]);
+    auto lane_id = tid_other % config["WARP_SIZE"];
+    auto warp_y = warp_id.floorDiv(config["BLOCK_LAYOUT_X"]);
+    auto warp_x = warp_id % config["BLOCK_LAYOUT_X"];
+    auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
+    auto lane_x = lane_id % config["WARP_LAYOUT_X"];
+    exprs.push_back(tz);
+    exprs.push_back((dim1 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["BLOCK_SCATTER_WIDTH_A"]) + 
+                    (dim2 * config["WARP_LAYOUT_Y"]) + (lane_y * config["WARP_SCATTER_WIDTH_A"]) + dim3);
+    exprs.push_back((dim4 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["BLOCK_SCATTER_WIDTH_B"]) + 
+                    (dim5 * config["WARP_LAYOUT_X"]) + (lane_x * config["WARP_SCATTER_WIDTH_B"]) + dim6);
+    return mlir::AffineMap::get(/*dimCount*/7, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  } else if (mapIdentifier == "reduceC") {
+    // reduce C (sharedC add to regC)
+    auto sh_store_row = dim0.floorDiv((THREAD_NUM / BM));
+    auto sh_store_col = dim0 % ((THREAD_NUM / BM));
+    exprs.push_back(dim1);
+    exprs.push_back(sh_store_row);
+    exprs.push_back(dim2 * GLOB_STORE_ROW_WIDTH + sh_store_col * config["GLOB_STORE_WIDTH"]);
+    return mlir::AffineMap::get(/*dimCount*/3, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+  } else if (mapIdentifier == "writeC") {
+    // regC_ to GlobC
+    auto sh_store_row = dim2.floorDiv((THREAD_NUM / BM));
+    auto sh_store_col = dim2 % ((THREAD_NUM / BM));
+    exprs.push_back(dim0 * BM + sh_store_row);
+    exprs.push_back(dim1 * BN + dim3 * GLOB_STORE_ROW_WIDTH + sh_store_col * config["GLOB_STORE_WIDTH"]);
+    return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else {
     assert(false);
   }
@@ -97,7 +209,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     LOG_DEBUG("===== after parallel =======\n",module);
 
     std::vector<mlir::affine::AffineForOp> tileCLoops{m_inner, n_inner};
-    auto tileC = Rewriter::bufferizeLoopCarryVar(loopK, tileCLoops);
+    auto regC = Rewriter::bufferizeLoopCarryVar(loopK, tileCLoops);
     LOG_DEBUG("===== after bufferizeLoopCarryVar =======\n",module);
 
     auto k_axes = Rewriter::split(loopK, 3, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_K"]});
@@ -109,8 +221,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     Rewriter::reorder({k_outer, k_mider, m_inner, n_inner});
     LOG_DEBUG("===== after reorder =======\n",module);
 
-    int64_t blockThreads;
-    auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
+    int64_t blockThreads = Analyzer::getThreadPerBlock(blockLevel);
     
     // // size of loading from glob to reg
     auto glob_load_total_width_a = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_M"] / blockThreads;
@@ -126,72 +237,82 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
     LOG_DEBUG("===== before alloc_buffer =======\n",module);
 
-    Rewriter::parallelToOneDim(gridLevel);
+    // Rewriter::parallelToOneDim(gridLevel);
     Rewriter::parallelToOneDim(blockLevel);
     LOG_DEBUG("===== before parallelToOneDim =======\n",module);
     
     auto blockIdx = Analyzer::getParallelIdx(gridLevel);
     auto threadIdx = Analyzer::getParallelIdx(blockLevel);
     
-    // auto loadTileAMap = getAffineMap("loadTileA", builder, config);
-    // auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
-    //                   (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
-    //                   k_outer, Position::begin);
-    // auto loadTileBMap = getAffineMap("loadTileB", builder, config);
-    // auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
-    //                   {threadIdx[0], threadIdx[1], k_outer.getInductionVar(), blockIdx[1]}, 
-    //                   (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
-    //                   loadTileA, Position::after);
-    // // module.dump();
-    // LOG_DEBUG("===== shm->temp =======\n",module);
+    auto loadTileAMap = getAffineMap("loadTileA", builder, config);
+    auto loadTileA = Rewriter::read(A, tempA, loadTileAMap, {threadIdx[0], k_outer.getInductionVar(), blockIdx[0]}, 
+                                    {config["GLOB_LOAD_WIDTH_A"]}, k_outer, Position::begin);
+    auto loadTileBMap = getAffineMap("loadTileB", builder, config);
+    auto loadTileB = Rewriter::read(B, tempB, loadTileBMap, {threadIdx[0], k_outer.getInductionVar(), blockIdx[1]}, 
+                                    {config["GLOB_LOAD_WIDTH_B"]}, loadTileA, Position::after);
+    LOG_DEBUG("===== before read A/B =======\n",module);
 
-    // auto storeTileAMap = getAffineMap("storeTileA", builder, config);
-    // // auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[1], threadIdx[0]}, 
-    // auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[0], threadIdx[1]}, 
-    //                     (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
-    //                     loadTileB, Position::after);
-    // auto storeTileBMap = getAffineMap("storeTileB", builder, config);
-    // auto storeTileB = Rewriter::write(tileB, smB, storeTileBMap, {threadIdx[0], threadIdx[1]}, 
-    //                     (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
-    //                     storeTileA, Position::after);
-    // auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
-    // auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
+    auto storeTileAMap = getAffineMap("storeTileA", builder, config);
+    auto storeTileA = Rewriter::write(tempA, smA, storeTileAMap, {threadIdx[0]}, {config["GLOB_LOAD_WIDTH_A"]}, loadTileB, Position::after);
+    auto storeTileBMap = getAffineMap("storeTileB", builder, config);
+    auto storeTileB = Rewriter::write(tempB, smB, storeTileBMap, {threadIdx[0]}, {config["GLOB_LOAD_WIDTH_B"]}, storeTileA, Position::after);
+    auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
+    auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
+    LOG_DEBUG("===== write A/B =======\n",module);
 
-    // LOG_DEBUG("===== storeTileAB =======\n",module);
+    auto loadFragAMap = getAffineMap("loadFragA", builder, config);
+    auto loadFragA = Rewriter::read(smA, regA, loadFragAMap, {k_mider.getInductionVar(), threadIdx[0]}, 
+                                    {config["BLOCK_SCATTER_WIDTH_A"], config["WARP_SCATTER_WIDTH_A"]}, k_mider, Position::begin);
+    auto loadFragBMap = getAffineMap("loadFragB", builder, config);
+    auto loadFragB = Rewriter::read(smB, regB, loadFragBMap, {k_mider.getInductionVar(), threadIdx[0]}, 
+                                    {config["BLOCK_SCATTER_WIDTH_B"], config["WARP_SCATTER_WIDTH_B"]}, loadFragA, Position::after);
+    LOG_DEBUG("===== read sh_A/B =======\n",module);
 
-    // auto loadFragAMap = getAffineMap("loadFragA", builder, config);
-    // auto loadFragA = Rewriter::read(smA, fragA, loadFragAMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
-    //                   config["VECTORIZE_WIDTH"], k_inner, Position::begin);
-    // tools::_opSetDescription(loadFragA,"loadFragA");
-    // auto loadFragBMap = getAffineMap("loadFragB", builder, config);
-    // auto loadFragB = Rewriter::read(smB, fragB, loadFragBMap, {threadIdx[0], threadIdx[1], k_inner.getInductionVar()}, 
-    //                   config["VECTORIZE_WIDTH"], loadFragA, Position::after);
-    // tools::_opSetDescription(loadFragB,"loadFragB");
+    Rewriter::cache_read(n_inner, A, regA, getAffineMap("cacheReadA", builder, config), {m_inner.getInductionVar()});
+    Rewriter::cache_read(n_inner, B, regB, getAffineMap("cacheReadB", builder, config), {n_inner.getInductionVar()});
+    LOG_DEBUG("===== load regA & cache_read =======\n",module);
 
-    // Rewriter::cache_read(k_inner, A, fragA, getAffineMap("cacheReadA", builder, config), {m_inner.getInductionVar()});
-    // Rewriter::cache_read(k_inner, B, fragB, getAffineMap("cacheReadB", builder, config), {n_inner.getInductionVar()});
-    // LOG_DEBUG("===== load frag & cache_read =======\n",module);
+    auto writeCbody = Rewriter::get_write(blockLevel, C);
+    assert(writeCbody.size() == 1);
+    auto m_inner_axes = Rewriter::split(writeCbody[0][0], 3, {config["BLOCK_SCATTER_WIDTH_A"], config["WARP_SCATTER_WIDTH_A"]});
+    auto n_inner_axes = Rewriter::split(writeCbody[0][1], 3, {config["BLOCK_SCATTER_WIDTH_B"], config["WARP_SCATTER_WIDTH_B"]});
+    auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1], m_inner_2 = m_inner_axes[2];
+    auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1], n_inner_2 = n_inner_axes[2];
+    Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1, m_inner_2, n_inner_2});
+    LOG_DEBUG("===== load split & reorder regC to C =======\n",module);
 
-    // auto writeCbody = Rewriter::get_write(blockLevel, C);
-    // assert(writeCbody.size() == 1);
-    // auto m_inner_axes = Rewriter::split(writeCbody[0][0], 2, {config["VECTORIZE_WIDTH"]});
-    // auto n_inner_axes = Rewriter::split(writeCbody[0][1], 2, {config["VECTORIZE_WIDTH"]});
-    // auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1];
-    // auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1];
-    // Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1});
-    // // module.dump();
-    // tools::_opSetDescription(m_inner_0,"m_inner_0");
-    // tools::_opSetDescription(m_inner_1,"m_inner_1");
-    // tools::_opSetDescription(n_inner_0,"n_inner_0");
-    // tools::_opSetDescription(n_inner_1,"n_inner_1");
-    // Rewriter::cache_write(m_inner_0, C, C, getAffineMap("cacheWriteC", builder, config), 
-    //                       {threadIdx[0], threadIdx[1], blockIdx[0], blockIdx[1],
-    //                        m_inner_0.getInductionVar(),n_inner_0.getInductionVar(),
-    //                        m_inner_1.getInductionVar(),n_inner_1.getInductionVar()
-    //                       });
+    if (config["LOCAL_SPLIT_U"] > 1) {
+      auto elementC = C.getType().dyn_cast<mlir::MemRefType>().getElementType();
+      auto regC_ = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"] * config["THREAD_SIZE_N"]}, elementC);
+      auto smC = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_M"], config["BLOCK_SIZE_N"]}, elementC);
+      auto cacheWriteShCMap = getAffineMap("cacheWriteShC", builder, config);
+      Rewriter::cache_write(m_inner_0, C, smC, cacheWriteShCMap, 
+                            {threadIdx[0], m_inner_0.getInductionVar(),m_inner_1.getInductionVar(), m_inner_2.getInductionVar(), 
+                            n_inner_0.getInductionVar(),n_inner_1.getInductionVar(), n_inner_2.getInductionVar()});
+      LOG_DEBUG("===== load cache_write regC to C =======\n",module);
 
-    // Rewriter::vectorize(n_inner_1, config["VECTORIZE_WIDTH"]);
-    // // module.dump();
+      auto reduceCMap = getAffineMap("reduceC", builder, config);
+      auto reduceCLoop = Rewriter::splitUReduce(smC, regC_, reduceCMap, {threadIdx[0]}, config["LOCAL_SPLIT_U"], config["GLOB_STORE_WIDTH"], m_inner_0, Position::after);
+      LOG_DEBUG("===== load splitUReduce =======\n",module);
+
+      auto writeCMap = getAffineMap("writeC", builder, config);
+      Rewriter::splitUWrite(regC_, C, writeCMap, {blockIdx[0], blockIdx[1], threadIdx[0]}, config["LOCAL_SPLIT_U"], config["GLOB_STORE_WIDTH"], reduceCLoop, Position::after);
+      auto StoreBarrier = Rewriter::barrier(m_inner_0, Position::after);
+      LOG_DEBUG("===== load write to C =======\n",module);
+
+    } else {
+      auto cacheWriteCMap = getAffineMap("cacheWriteC", builder, config);
+      Rewriter::cache_write(m_inner_0, C, C, cacheWriteCMap, 
+                            {blockIdx[0], blockIdx[1], threadIdx[0], 
+                            m_inner_0.getInductionVar(),m_inner_1.getInductionVar(), m_inner_2.getInductionVar(), 
+                            n_inner_0.getInductionVar(),n_inner_1.getInductionVar(), n_inner_2.getInductionVar()});
+      LOG_DEBUG("===== load cache_write regC to C =======\n",module);
+    }
+
+    Rewriter::vectorize(n_inner_2, config["WARP_SCATTER_WIDTH_B"]);
+    LOG_DEBUG("===== vectorize =======\n",module);
+    
+    // module.dump();
     
     // auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
     // auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);

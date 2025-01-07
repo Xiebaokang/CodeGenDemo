@@ -30,6 +30,7 @@ struct CompareFunc {
 
 namespace Analyzer {
   std::vector<int64_t> getParallelNumber(mlir::affine::AffineParallelOp parallelLevel, int64_t& totalNumber);
+  int64_t getThreadPerBlock(mlir::affine::AffineParallelOp parallelLevel);
   std::vector<mlir::func::FuncOp> collectFunctions(mlir::ModuleOp& module, const std::string& targetFuncName = {""});
   std::vector<mlir::affine::AffineForOp> collectFuncLoops(mlir::func::FuncOp funcOp);
   std::set<std::string> collectFuncNames(mlir::ModuleOp& module);

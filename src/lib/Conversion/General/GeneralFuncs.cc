@@ -87,17 +87,6 @@ mlir::AffineExpr getOrderExpr(mlir::OpBuilder builder, int dimCount) {
   return sumExpr;
 }
 
-int getExprDimNum(mlir::AffineExpr expr) {
-  // 获取expr中exprDim的数量
-  if (expr.dyn_cast<mlir::AffineDimExpr>()) {
-    return 1;
-  } else if (auto binaryExpr = expr.dyn_cast<mlir::AffineBinaryOpExpr>()) {
-    return getExprDimNum(binaryExpr.getLHS()) + getExprDimNum(binaryExpr.getRHS());
-  } else {
-    return 0;
-  }
-}
-
 mlir::AffineExpr shiftAffineExprDim(mlir::MLIRContext* context, mlir::AffineExpr expr, int shift) {
   // d0 + d1 + d2  =>  shift==1  =>  d1 + d2 + d3
   if (auto dimExpr_ = expr.dyn_cast<mlir::AffineDimExpr>()) {
@@ -154,24 +143,53 @@ std::vector<int64_t> getOptVectorizeGroup(int64_t width) {
   return group;
 }
 
-mlir::affine::AffineForOp load(mlir::OpBuilder builder, mlir::Value src, mlir::Value dst, mlir::AffineMap srcMap, mlir::AffineMap dstMap, 
-                               llvm::SmallVector<mlir::Value> srcOperands, llvm::SmallVector<mlir::Value> dstOperands, 
-                               int64_t loadWidth, int loadTimes) {
-  // 两个buffer读取数据
-  auto group = getOptVectorizeGroup(loadWidth);
+mlir::affine::AffineForOp shiftBufferDatas(mlir::OpBuilder builder, mlir::Value src, mlir::Value dst, mlir::AffineMap srcMap, mlir::AffineMap dstMap, 
+                                          llvm::SmallVector<mlir::Value> srcOperands, llvm::SmallVector<mlir::Value> dstOperands, 
+                                          int64_t loadWidth, std:: vector<int> times) {
+  auto srcNumDims = srcMap.getNumDims();
+  // auto group = getOptVectorizeGroup(loadWidth);
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
-  auto loadBody = [&](mlir::OpBuilder &b, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
-    mlir::OpBuilder::InsertionGuard nestedGuard(b);
-    dstOperands.push_back(iv);
-    for (auto w : group) {
-      auto vectorType = mlir::VectorType::get(w, dstType.getElementType());
-      auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, srcMap, srcOperands);
-      builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, dstMap, dstOperands);
+  mlir::Value ld;
+  int nestedNum = 0;
+
+  mlir::SmallVector<int64_t, 16> upperBounds(times.begin(), times.end());
+  mlir::SmallVector<int64_t, 16> steps(times.size(), /*Value=*/1);
+  mlir::SmallVector<int64_t, 16> lowerBounds(times.size(), /*Value=*/0);
+  mlir::affine::buildAffineLoopNest(builder, builder.getUnknownLoc(), lowerBounds, upperBounds, steps,
+    [&](mlir::OpBuilder &b, mlir::Location loc, mlir::ValueRange ivs) {
+      for (auto iv : ivs) {
+        srcOperands.push_back(iv);
+        dstOperands.push_back(iv);
+        nestedNum++;
+      }
+      if (srcNumDims - srcOperands.size() == 1) {
+        auto innerBody = [&](mlir::OpBuilder &b, mlir::Location nestedLoc, mlir::Value iv_inner, mlir::ValueRange iterArgs) {
+          mlir::OpBuilder::InsertionGuard nestedGuard(b);
+          srcOperands.push_back(iv_inner);
+          dstOperands.push_back(iv_inner);
+          nestedNum++;
+          auto vectorType = mlir::VectorType::get(1, dstType.getElementType());
+          ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, srcMap, srcOperands);
+          b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, dstOperands);
+          b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
+        };
+        b.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, loadWidth, 1, mlir::ValueRange({}), innerBody);
+      } else {
+        // for (auto w : group) {
+        auto vectorType = mlir::VectorType::get(loadWidth, dstType.getElementType());
+        ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, srcMap, srcOperands);
+        b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, dstOperands);
+        // }
+      }
     }
-    b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
-  };
-  auto load = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, loadTimes, 1, mlir::ValueRange({}), loadBody);
-  return load;
+  );
+  // get mostouter affineforOp
+  mlir::Operation* cur = ld.getDefiningOp();
+  while (nestedNum != 0) {
+    cur = cur->getParentOp();
+    nestedNum--;
+  }
+  return mlir::dyn_cast<mlir::affine::AffineForOp>(cur);
 }
 
 }

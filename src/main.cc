@@ -230,10 +230,10 @@ int main(){
   std::vector<Config> configs = {
     {
       {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 48}, {"BLOCK_SIZE_K", 32}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 6}, 
-      {"GLOB_LOAD_WIDTH_A", 6}, {"GLOB_LOAD_WIDTH_B", 2}, 
+      {"GLOB_LOAD_WIDTH_A", 4}, {"GLOB_LOAD_WIDTH_B", 2}, 
       {"BLOCK_LAYOUT_Y", 2}, {"BLOCK_LAYOUT_X", 1}, {"WARP_LAYOUT_Y", 8}, {"WARP_LAYOUT_X", 8},
       {"BLOCK_SCATTER_WIDTH_A", 2}, {"BLOCK_SCATTER_WIDTH_B", 2}, {"WARP_SCATTER_WIDTH_A", 2}, {"WARP_SCATTER_WIDTH_B", 2}, 
-      {"LOCAL_SPLIT_U", 2}, {"BLOCK_MAPPING", 8}, {"WARP_SIZE", 64}, {"GLOB_STORE_WIDTH", 6}, 
+      {"LOCAL_SPLIT_U", 2}, {"BLOCK_MAPPING", 8}, {"WARP_SIZE", 64}, {"GLOB_STORE_WIDTH", 2}, 
       {KEY_DTYPE_A, (int)KcgDtype::float16},
       {KEY_DTYPE_B, (int)KcgDtype::float16},
       {KEY_DTYPE_C, (int)KcgDtype::float16},

@@ -416,104 +416,60 @@ void parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp) {
 
 // dst is register.
 mlir::affine::AffineForOp read(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
-                              int64_t width, mlir::affine::AffineForOp compute_at, Position pos) {
+                              std::vector<int64_t> widths, mlir::affine::AffineForOp compute_at, Position pos) {
+  auto dimsNum = map.getNumDims();
   auto builder = getBuilder(compute_at, pos);
-  auto dim0 = builder.getAffineDimExpr(0);
-  auto dstMap = mlir::AffineMap::get(/*dimCount*/1, 0, llvm::ArrayRef<mlir::AffineExpr>(dim0 * width), builder.getContext());
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
-  // registers is always 1 dim.
-  auto loadTimes = dstType.getShape()[0] / width;
-  auto rearWidth = dstType.getShape()[0] % width;
-  auto group = getOptVectorizeGroup(width);
+  int64_t totalWidth = dstType.getShape()[0];
 
-  auto loadBody = [&](mlir::OpBuilder &b, mlir::Location nestedLoc, mlir::Value iv, mlir::ValueRange iterArgs) {
-    mlir::OpBuilder::InsertionGuard nestedGuard(b);
-    operands.push_back(iv);
-    for (auto w : group) {
-      auto vectorType = mlir::VectorType::get(w, dstType.getElementType());
-      auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, map, operands);
-      builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, dstMap, mlir::ValueRange({iv}));
-    }
-    b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
-  };
-  auto load = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, loadTimes, 1, /*iterArgs=lvm::None*/ mlir::ValueRange({}), loadBody);
-  // if (rearWidth) {
-  //   auto newSrcMap = getModifiedExpr(builder.getContext(), map, builder.getAffineConstantExpr(loadTimes), operands.size()-1, 0);
-  //   auto newDstMap = getModifiedExpr(builder.getContext(), dstMap, builder.getAffineConstantExpr(loadTimes), 0, 0);
-  //   operands.pop_back();
-  //   builder.setInsertionPointAfter(load);
-  //   for (auto w : group) {
-  //     auto vectorType = mlir::VectorType::get(w, dstType.getElementType());
-  //     auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, newSrcMap, operands);
-  //     builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, newDstMap, {});
-  //   }
-  // }
+  std::vector<int> times;
+  mlir::AffineExpr expr = builder.getAffineConstantExpr(0);
+  for (int i=0; i<widths.size(); i++) {
+    auto dim = builder.getAffineDimExpr(i);
+    expr = expr + dim * widths[i];
+    times.push_back(totalWidth / widths[i]);
+    totalWidth = widths[i];
+  }
+  mlir::AffineMap dstMap;
+  if (dimsNum - (operands.size() + times.size()) == 1) {
+    expr = expr + builder.getAffineDimExpr(widths.size());
+    dstMap = mlir::AffineMap::get(/*dimCount*/widths.size() + 1, 0, llvm::ArrayRef<mlir::AffineExpr>(expr), builder.getContext());
+  } else {
+    dstMap = mlir::AffineMap::get(/*dimCount*/widths.size(), 0, llvm::ArrayRef<mlir::AffineExpr>(expr), builder.getContext());
+  }
+  
+  llvm::SmallVector<mlir::Value> dstOperands;
+  auto load = shiftBufferDatas(builder, src, dst, map, dstMap, operands, dstOperands, widths.back(), times);
   return load;
 }
 
-
 // src is register
-mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map, 
-                                   llvm::SmallVector<mlir::Value> operands, int64_t width,
-                                   mlir::affine::AffineForOp compute_at, Position pos) {
+mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
+                                std::vector<int64_t> widths, mlir::affine::AffineForOp compute_at, Position pos) {
   auto dimsNum = map.getNumDims();
-  auto dim0 = mlir::getAffineDimExpr(0, compute_at.getContext());
-  auto dim1 = mlir::getAffineDimExpr(1, compute_at.getContext());
-  bool twoLoop = abs(dimsNum - operands.size()) == 2;
-  auto srcMap = !twoLoop ? 
-                mlir::AffineMap::get(/*dimCount*/1, 0, llvm::ArrayRef<mlir::AffineExpr>(dim0 * width), compute_at.getContext()) :
-                mlir::AffineMap::get(/*dimCount*/2, 0, llvm::ArrayRef<mlir::AffineExpr>(dim0 * width + dim1), compute_at.getContext());
   auto builder = getBuilder(compute_at, pos);
-  auto srcType = src.getType().dyn_cast<mlir::MemRefType>();
-  // registers is always 1 dim.
-  auto storeTimes = srcType.getShape()[0] / width;
-  assert(storeTimes > 0 && "error storeTimes <= 0");
-  auto storeBody = [&](mlir::OpBuilder &builder, mlir::Location nestedLoc, mlir::Value iv,
-                      mlir::ValueRange iterArgs) {
-    mlir::OpBuilder::InsertionGuard nestedGuard(builder);
-    // loop iterator is the last operand.
-    operands.push_back(iv);
-    if (twoLoop) {
-      auto innerBody = [&](mlir::OpBuilder &builder, mlir::Location nestedLoc, mlir::Value iv_inner,
-                        mlir::ValueRange iterArgs) {
-        mlir::OpBuilder::InsertionGuard nestedGuard(builder);
-        // loop iterator is the last operand.
-        operands.push_back(iv_inner);
-        // if(width > 1)
-        {
-          auto vectorType = mlir::VectorType::get(1, srcType.getElementType());
-          auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, srcMap, mlir::ValueRange({iv, iv_inner}));
-          auto st = builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, map, operands);
-        }
-        // else{
-        //   auto dtype = mlir::MemRefType::get(1,srcType.getElementType());
-        //   auto ld = builder.create<mlir::affine::AffineLoadOp>(builder.getUnknownLoc(),dtype,src,srcMap,mlir::ValueRange({iv, iv_inner}));
-        //   auto st = builder.create<mlir::affine::AffineStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, map, operands);
-        // }
-        builder.create<mlir::affine::AffineYieldOp>(builder.getUnknownLoc());
-      };
-      auto storeInner = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 
-          0, width, 1, /*iterArgs=lvm::None*/ mlir::ValueRange({}), innerBody);
-      builder.create<mlir::affine::AffineYieldOp>(builder.getUnknownLoc());
-    } else { 
-      // if(width > 1)
-      {
-        auto vectorType = mlir::VectorType::get(width, srcType.getElementType());
-        auto ld = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), vectorType, src, srcMap, mlir::ValueRange({iv}));
-        auto st = builder.create<mlir::affine::AffineVectorStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, map, operands);
-      }
-      // else{
-      //   auto dtype = mlir::MemRefType::get(1,srcType.getElementType());
-      //   auto ld = builder.create<mlir::affine::AffineLoadOp>(builder.getUnknownLoc(), dtype, src, srcMap, mlir::ValueRange({iv}));
-      //   auto st = builder.create<mlir::affine::AffineStoreOp>(builder.getUnknownLoc(), ld.getResult(), dst, map, operands);
-      // }
-      builder.create<mlir::affine::AffineYieldOp>(builder.getUnknownLoc());
-    }
-  };
-  auto store = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 
-     0, storeTimes, 1, /*iterArgs=lvm::None*/ mlir::ValueRange({}), storeBody);
-  return store;
+  auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
+  int64_t totalWidth = dstType.getShape()[0];
 
+  std::vector<int> times;
+  mlir::AffineExpr expr = builder.getAffineConstantExpr(0);
+  for (int i=0; i<widths.size(); i++) {
+    auto dim = builder.getAffineDimExpr(i);
+    expr = expr + dim * widths[i];
+    times.push_back(totalWidth / widths[i]);
+    totalWidth = widths[i];
+  }
+  mlir::AffineMap srcMap;
+  if (dimsNum - (operands.size() + times.size()) == 1) {
+    expr = expr + builder.getAffineDimExpr(widths.size());
+    srcMap = mlir::AffineMap::get(/*dimCount*/widths.size() + 1, 0, llvm::ArrayRef<mlir::AffineExpr>(expr), builder.getContext());
+  } else {
+    srcMap = mlir::AffineMap::get(/*dimCount*/widths.size(), 0, llvm::ArrayRef<mlir::AffineExpr>(expr), builder.getContext());
+  }
+  
+  llvm::SmallVector<mlir::Value> srcOperands;
+  auto store = shiftBufferDatas(builder, src, dst, srcMap, map, srcOperands, operands, widths.back(), times);
+  return store;
 }
 
 // src is register
@@ -628,6 +584,91 @@ mlir::affine::AffineForOp vectorize(mlir::affine::AffineForOp readOrWrite, int64
     store.erase();
   });
   return readOrWrite;
+}
+
+mlir::affine::AffineForOp splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
+                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos) {
+  auto builder = getBuilder(compute_at, pos);
+  auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
+  int64_t regCTotalWidth = dstType.getShape()[0];   // 24
+  int64_t globStoreTotalWidth = regCTotalWidth / localSplitU;  // 12
+  int64_t globStoreNum = globStoreTotalWidth / globStoreWidth;  // 6
+
+  auto dim0 = builder.getAffineDimExpr(0);
+  auto dim1 = builder.getAffineDimExpr(1);
+  auto dstExpr = dim0 * globStoreTotalWidth + dim1 * globStoreWidth;
+  auto reduceExpr = dim0 * globStoreWidth + dim1;
+  auto dstMap = mlir::AffineMap::get(2, 0, llvm::ArrayRef<mlir::AffineExpr>(dstExpr), builder.getContext());
+  auto reduceMap = mlir::AffineMap::get(2, 0, llvm::ArrayRef<mlir::AffineExpr>(reduceExpr), builder.getContext());
+
+  auto oldExprs = map.getResults();
+  mlir::SmallVector<mlir::AffineExpr> newExprs;
+  for (int i=0; i<oldExprs.size(); i++) {
+    if (i != oldExprs.size() - 1) {
+      newExprs.push_back(oldExprs[i]);
+    } else {
+      auto dim = builder.getAffineDimExpr(map.getNumDims());
+      newExprs.push_back(oldExprs[i] + dim);
+    }
+  }
+  auto newSrcMap = mlir::AffineMap::get(map.getNumDims() + 1, 0, llvm::ArrayRef<mlir::AffineExpr>(newExprs), builder.getContext());
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  llvm::SmallVector<bool> eqFlags;
+  exprs.push_back(dim0);
+  eqFlags.push_back(true);
+  auto cst = mlir::IntegerSet::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), llvm::ArrayRef<bool>(eqFlags));
+
+  auto outerBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv, mlir::ValueRange iterArgs) {
+    // *** outer ***
+    mlir::OpBuilder::InsertionGuard nestedGuard(b);
+    operands.push_back(iv);
+    auto innerBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv_inner, mlir::ValueRange iterArgs) {
+      // *** inner ***
+      mlir::OpBuilder::InsertionGuard nestedGuard(b);
+      operands.push_back(iv_inner);
+      // *** ifop ***
+      auto ifOp = b.create<mlir::affine::AffineIfOp>(b.getUnknownLoc(), cst, mlir::ValueRange{iv}, /*withElseRegion=*/true);
+      b.setInsertionPointToStart(ifOp.getThenBlock());
+      llvm::SmallVector<mlir::Value> dstOperands{iv, iv_inner};
+      auto vectorType = mlir::VectorType::get(globStoreWidth, dstType.getElementType());
+      auto ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, map, operands);
+      b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, dstOperands);
+      b.setInsertionPointToStart(ifOp.getElseBlock());
+      auto reduceBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv_reduce, mlir::ValueRange iterArgs) {
+        // *** reduce ***
+        mlir::OpBuilder::InsertionGuard nestedGuard(b);
+        operands.push_back(iv_reduce);
+        llvm::SmallVector<mlir::Value> reduceOperands{iv_inner, iv_reduce};
+        auto loadRegC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), dst, reduceMap, reduceOperands);
+        auto loadShC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), src, newSrcMap, operands);
+        auto addOp = b.create<mlir::arith::AddFOp>(b.getUnknownLoc(), loadRegC, loadShC);
+        b.create<mlir::affine::AffineStoreOp>(b.getUnknownLoc(), addOp, dst, reduceMap, reduceOperands);
+        b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
+      };
+      builder.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, globStoreWidth, 1, mlir::ValueRange({}), reduceBody);
+
+      b.setInsertionPointAfter(ifOp);
+      b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
+    };
+    builder.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, globStoreNum, 1, mlir::ValueRange({}), innerBody);
+    b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
+  };
+  auto reduce = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, localSplitU, 1, mlir::ValueRange({}), outerBody);
+  return reduce;
+}
+
+mlir::affine::AffineForOp splitUWrite(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
+                                      int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos) {
+  auto builder = getBuilder(compute_at, pos);
+  auto dim0 = builder.getAffineDimExpr(0);
+  auto srcType = src.getType().dyn_cast<mlir::MemRefType>();
+  int64_t regTotalWidth = srcType.getShape()[0];
+  int globStoreNum = regTotalWidth / localSplitU / globStoreWidth;
+  mlir::AffineMap srcMap = mlir::AffineMap::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(dim0 * globStoreWidth), builder.getContext());
+  llvm::SmallVector<mlir::Value> srcOperands;
+  auto store = shiftBufferDatas(builder, src, dst, srcMap, map, srcOperands, operands, globStoreWidth, {globStoreNum});
+  return store;
 }
 
 std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::affine::AffineForOp> readBodys, mlir::Value& buffer, mlir::affine::AffineForOp compute_at) {

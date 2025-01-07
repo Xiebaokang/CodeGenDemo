@@ -87,11 +87,10 @@ mlir::Value alloc_buffer(ContextOp contextOp, Position pos, MemorySpace ms,
 
 
 mlir::affine::AffineForOp read(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
-                               int64_t width, mlir::affine::AffineForOp compute_at, Position pos);
+                              std::vector<int64_t> widths, mlir::affine::AffineForOp compute_at, Position pos);
 
-mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map,
-                                llvm::SmallVector<mlir::Value> operands, int64_t width,
-                                mlir::affine::AffineForOp compute_at, Position pos);
+mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
+                                std::vector<int64_t> widths, mlir::affine::AffineForOp compute_at, Position pos);
 
 mlir::affine::AffineForOp write(mlir::OpBuilder &builder, mlir::Value src, mlir::Value dst,
                                 mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, int64_t width);
@@ -99,6 +98,12 @@ mlir::affine::AffineForOp write(mlir::OpBuilder &builder, mlir::Value src, mlir:
 mlir::gpu::BarrierOp barrier(mlir::affine::AffineForOp compute_at, Position pos);
 
 mlir::affine::AffineForOp vectorize(mlir::affine::AffineForOp readOrWrite, int64_t width);
+
+mlir::affine::AffineForOp splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
+                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);
+
+mlir::affine::AffineForOp splitUWrite(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
+                                      int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);
 
 void cache_read(mlir::affine::AffineForOp scope, 
     mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands);
