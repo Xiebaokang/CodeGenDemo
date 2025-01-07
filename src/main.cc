@@ -201,7 +201,17 @@ KernelInfo _compile(const MatmulParams& cfg) {
       {KEY_WARP_LAYOUT_M, cfg.m_WARP_LAYOUT_M}, {KEY_WARP_LAYOUT_N, cfg.m_WARP_LAYOUT_N},
       {KEY_DTYPE_A, (int)cfg.m_dtypeA},{KEY_DTYPE_B, (int)cfg.m_dtypeB},{KEY_DTYPE_C, (int)cfg.m_dtypeC},
       {KEY_M, (int)cfg.m_size},{KEY_N, (int)cfg.n_size},{KEY_K, (int)cfg.k_size},
-      {KEY_IS_A_TRANSPOSE,(int)cfg.m_isATranspose}
+      {KEY_IS_A_TRANSPOSE,(int)cfg.m_isATranspose},
+
+      {KEY_GLOB_LOAD_WIDTH_A,(int)cfg.m_GLOB_LOAD_WIDTH_A},
+      {KEY_GLOB_LOAD_WIDTH_B,(int)cfg.m_GLOB_LOAD_WIDTH_B},
+      {KEY_WARP_SCATTER_WIDTH_A,(int)cfg.m_WARP_SCATTER_WIDTH_A},
+      {KEY_WARP_SCATTER_WIDTH_B,(int)cfg.m_WARP_SCATTER_WIDTH_B},
+      {KEY_THREAD_SCATTER_WIDTH_A,(int)cfg.m_THREAD_SCATTER_WIDTH_A},
+      {KEY_THREAD_SCATTER_WIDTH_B,(int)cfg.m_THREAD_SCATTER_WIDTH_B},
+      {KEY_LOCAL_SPLIT_U,(int)cfg.m_LOCAL_SPLIT_U},
+      {KEY_BLOCK_MAPPING,(int)cfg.m_BLOCK_MAPPING},
+      {KEY_GLOB_STORE_WIDTH,(int)cfg.m_GLOB_STORE_WIDTH}
     }
   };
   std::vector<std::string> names = {cfg.getKernelName()};
@@ -252,11 +262,11 @@ int main(){
 
   std::vector<Config> configs = {
     {
-      {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 48}, {"BLOCK_SIZE_K", 32}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 6}, 
-      {"GLOB_LOAD_WIDTH_A", 4}, {"GLOB_LOAD_WIDTH_B", 2}, 
-      {"BLOCK_LAYOUT_Y", 2}, {"BLOCK_LAYOUT_X", 1}, {"WARP_LAYOUT_Y", 8}, {"WARP_LAYOUT_X", 8},
-      {"WARP_SCATTER_WIDTH_A", 2}, {"WARP_SCATTER_WIDTH_B", 2}, {"THREAD_SCATTER_WIDTH_A", 2}, {"THREAD_SCATTER_WIDTH_B", 2}, 
-      {"LOCAL_SPLIT_U", 2}, {"BLOCK_MAPPING", 8}, {"WARP_SIZE", 64}, {"GLOB_STORE_WIDTH", 2}, 
+      {KEY_BLOCK_SIZE_M, 64}, {KEY_BLOCK_SIZE_N, 48}, {KEY_BLOCK_SIZE_K, 32}, {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 6}, 
+      {KEY_GLOB_LOAD_WIDTH_A, 4}, {KEY_GLOB_LOAD_WIDTH_B, 2}, 
+      {KEY_BLOCK_LAYOUT_M, 2}, {KEY_BLOCK_LAYOUT_N, 1}, {KEY_WARP_LAYOUT_M, 8}, {KEY_WARP_LAYOUT_N, 8},
+      {KEY_WARP_SCATTER_WIDTH_A, 2}, {KEY_WARP_SCATTER_WIDTH_B, 2}, {KEY_THREAD_SCATTER_WIDTH_A, 2}, {KEY_THREAD_SCATTER_WIDTH_B, 2}, 
+      {KEY_LOCAL_SPLIT_U, 2}, {KEY_BLOCK_MAPPING, 8}, {KEY_WARP_SIZE, 64}, {KEY_GLOB_STORE_WIDTH, 2}, 
       {KEY_DTYPE_A, (int)KcgDtype::float16},
       {KEY_DTYPE_B, (int)KcgDtype::float16},
       {KEY_DTYPE_C, (int)KcgDtype::float16},
