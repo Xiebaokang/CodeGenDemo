@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <map>
 #include <cmath>
+#include "Common/Utils.h"
 
 namespace KernelCodeGen {
 namespace Rewriter {
@@ -67,7 +68,8 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
       auto mem = storeOp.getMemref();
       int dimCount = replaceIndexWithExpr(oldIv, ivsVector, storeOp, sumExpr, exprs, operands);
       mlir::AffineMap map = mlir::AffineMap::get(/*dimCount*/dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
-      builder.create<mlir::affine::AffineStoreOp>(builder.getUnknownLoc(), valueToStore, mem, map, llvm::ArrayRef<mlir::Value>(operands));
+      auto newstore = builder.create<mlir::affine::AffineStoreOp>(builder.getUnknownLoc(), valueToStore, mem, map, llvm::ArrayRef<mlir::Value>(operands));
+      tools::_opCopyAttr(storeOp, newstore, AttrDescription);
       storeOp.erase();
     } else if (auto applyOp = mlir::dyn_cast<mlir::affine::AffineApplyOp>(user)) {
       int dimCount = replaceIndexWithExpr(oldIv, ivsVector, applyOp, sumExpr, exprs, operands);
@@ -81,6 +83,438 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
 
   forOp.erase();
   return loops;
+}
+
+
+
+
+mlir::AffineMap getStoreGlobalCMap(mlir::OpBuilder builder, const std::map<std::string,int>& config){
+  using namespace mlir;
+  int dimCount = 0;
+  auto iv_wrm = builder.getAffineDimExpr(dimCount++);
+  auto iv_trm = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_m = builder.getAffineDimExpr(dimCount++);
+  auto iv_wrn = builder.getAffineDimExpr(dimCount++);
+  auto iv_trn = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_n = builder.getAffineDimExpr(dimCount++);
+
+  
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+  const int blockDimx = BN / TN;
+  const int blockDimy = BM / TM;
+
+  
+  AffineExpr coordM = iv_wrm * (BM / WRM) + iv_trm * (BM / (WRM * TRM)) + iv_area_m;
+  AffineExpr coordN = iv_wrn * (BN / WRN) + iv_trn * (BN / (WRN * TRN)) + iv_area_n;
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(coordM);
+  exprs.push_back(coordN);
+
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+mlir::AffineMap getLoadGlobalAMap(mlir::OpBuilder builder, const std::map<std::string,int>& config){
+  using namespace mlir;
+  int dimCount = 0;
+  auto iv_wrm = builder.getAffineDimExpr(dimCount++);
+  auto iv_trm = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_m = builder.getAffineDimExpr(dimCount++);
+  auto iv_K = builder.getAffineDimExpr(dimCount++);
+  auto iv_splitu = builder.getAffineDimExpr(dimCount++);
+  auto tz = builder.getAffineDimExpr(dimCount++);
+
+  
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+  const int blockDimx = BN / TN;
+  const int blockDimy = BM / TM;
+
+  
+  AffineExpr coordM = iv_wrm * (BM / WRM) + iv_trm * (BM / (WRM * TRM)) + iv_area_m;
+  // AffineExpr coordN = iv_wrn * (BN / WRN) + iv_trn * (BN / (WRN * TRN)) + iv_area_n;
+  AffineExpr coordK = iv_K + iv_splitu + tz;
+  // AffineExpr coordK = kexpr;
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(coordK);
+  exprs.push_back(coordM);
+
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+
+mlir::AffineMap getLoadGlobalBMap(mlir::OpBuilder builder, const std::map<std::string,int>& config){
+  using namespace mlir;
+  int dimCount = 0;
+  auto iv_wrn = builder.getAffineDimExpr(dimCount++);
+  auto iv_trn = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_n = builder.getAffineDimExpr(dimCount++);
+  auto iv_K = builder.getAffineDimExpr(dimCount++);
+  auto iv_splitu = builder.getAffineDimExpr(dimCount++);
+  auto tz = builder.getAffineDimExpr(dimCount++);
+
+  
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+  const int blockDimx = BN / TN;
+  const int blockDimy = BM / TM;
+
+  
+  // AffineExpr coordM = iv_wrm * (BM / WRM) + iv_trm * (BM / (WRM * TRM)) + iv_area_m;
+  AffineExpr coordN = iv_wrn * (BN / WRN) + iv_trn * (BN / (WRN * TRN)) + iv_area_n;
+  AffineExpr coordK = iv_K + iv_splitu + tz;
+  // AffineExpr coordK = kexpr;
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(coordK);
+  exprs.push_back(coordN);
+
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+
+mlir::AffineMap getLoadFromregCMap(mlir::OpBuilder builder, const std::map<std::string,int>& config){
+  using namespace mlir;
+  int dimCount = 0;
+  auto iv_wrm = builder.getAffineDimExpr(dimCount++);
+  auto iv_trm = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_m = builder.getAffineDimExpr(dimCount++);
+  
+  auto iv_wrn = builder.getAffineDimExpr(dimCount++);
+  auto iv_trn = builder.getAffineDimExpr(dimCount++);
+  auto iv_area_n = builder.getAffineDimExpr(dimCount++);
+  
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+  const int blockDimx = BN / TN;
+  const int blockDimy = BM / TM;
+  auto mm = iv_wrm * WRM + iv_trm * TRM + iv_area_m;
+  auto nn = iv_wrn * WRN + iv_trn * TRN + iv_area_n;
+  
+  // AffineExpr coordM = iv_wrm * (BM / WRM) + iv_trm * (BM / (WRM * TRM)) + iv_area_m;
+  // AffineExpr coordN = iv_wrn * (BN / WRN) + iv_trn * (BN / (WRN * TRN)) + iv_area_n;
+  // vectorize_copy(&A[k + coordY][coordX], &smA[coordY][coordX], maxwidth);
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  exprs.push_back(mm);
+  exprs.push_back(nn);
+
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+
+void removeAffineForWithOps(mlir::affine::AffineForOp affineForOp) {
+    // 删除 affine.for 循环内部的操作
+    std::vector<mlir::affine::AffineForOp> innerLoops {};
+    std::vector<mlir::Operation*> eraseOps{};
+
+    for (auto& op : affineForOp.getBody()->getOperations()) {
+      if(auto forop = mlir::dyn_cast<mlir::affine::AffineForOp>(op)){
+        // removeAffineForWithOps(forop);
+        innerLoops.push_back(forop);
+      }
+      else{
+        eraseOps.push_back(&op);
+      }
+    }
+    for(auto e : eraseOps){
+      e->erase();
+    }
+    for(auto loop : innerLoops){
+      removeAffineForWithOps(loop);
+    }
+    // 删除 affine.for 操作符
+    affineForOp.erase();
+}
+
+std::vector<mlir::affine::AffineForOp> createWarpThreadScatterizeLoops(
+  mlir::OpBuilder& builder, const std::map<std::string, int>& config) 
+{
+  std::vector<mlir::affine::AffineForOp> ret {};
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+
+  auto loopWRM = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,WRM);
+  tools::_opSetDescription(loopWRM,"warpRepeat");
+  builder.setInsertionPointToStart(loopWRM.getBody());
+  auto loopWRN = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,WRN);
+  builder.setInsertionPointToStart(loopWRN.getBody());
+  auto loopTRM = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,TRM);
+  tools::_opSetDescription(loopTRM,"threadRepeat");
+  builder.setInsertionPointToStart(loopTRM.getBody());
+  auto loopTRN = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,TRN);
+  builder.setInsertionPointToStart(loopTRN.getBody());
+  auto loopAreaM = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,TRM);
+  tools::_opSetDescription(loopAreaM,"threadCalculateSmallArea");
+  builder.setInsertionPointToStart(loopAreaM.getBody());
+  auto loopAreaN = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(),0,TRN);
+  builder.setInsertionPointToStart(loopAreaN.getBody());
+
+  ret.push_back(loopWRM); 
+  ret.push_back(loopWRN); 
+  ret.push_back(loopTRM); 
+  ret.push_back(loopTRN); 
+  ret.push_back(loopAreaM); 
+  ret.push_back(loopAreaN); 
+  return ret;
+}
+
+void scatterize(mlir::affine::AffineForOp k_midder,
+  mlir::affine::AffineForOp kouter, 
+  mlir::affine::AffineParallelOp threadParallel, 
+  mlir::affine::AffineParallelOp gridParallel, 
+  const std::map<std::string, int>& config) 
+{
+  using namespace mlir;
+  const int BM = config.at("BLOCK_SIZE_M");
+  const int BN = config.at("BLOCK_SIZE_N");
+  const int TM = config.at("THREAD_SIZE_M");
+  const int TN = config.at("THREAD_SIZE_N");
+
+  const int BLM = config.at("BLOCK_LAYOUT_Y");
+  const int BLN = config.at("BLOCK_LAYOUT_X");
+  const int WLM = config.at("WARP_LAYOUT_Y");
+  const int WLN = config.at("WARP_LAYOUT_X");
+
+  const int WSSM = config.at("WARP_SCATTER_WIDTH_A");
+  const int WSSN = config.at("WARP_SCATTER_WIDTH_B");
+  const int TSSM = config.at("THREAD_SCATTER_WIDTH_A");
+  const int TSSN = config.at("THREAD_SCATTER_WIDTH_B");
+
+  const int WRM = TM / WSSM; const int WRN = TN / WSSN;
+  const int TRM = WSSM / TSSM; const int TRN = WSSN / TSSM ; 
+  mlir::Operation* m_innerOp = nullptr;
+  mlir::Operation* n_innerOp = nullptr;
+  std::vector<mlir::Operation*> innerOps{};
+  k_midder.walk([&](affine::AffineForOp op){
+    if(tools::isOpAttrEqualToString(op,"kcg.desc","n_inner")){
+      n_innerOp = op.getOperation();
+      for(auto& op : op.getBody()->getOperations()){
+        innerOps.push_back(&op);
+      }
+    }
+    if(tools::isOpAttrEqualToString(op,"kcg.desc","m_inner")){
+      m_innerOp = op.getOperation();
+    }
+  });
+
+
+  // find original muladd pos
+  mlir::Operation* loadregc = nullptr;
+  mlir::Operation* loadga = nullptr;
+  mlir::Operation* loadgb = nullptr;
+  k_midder.walk([&](affine::AffineLoadOp op){
+    auto memspace = op.getMemRefType().getMemorySpaceAsInt();
+    if(memspace == 5){
+      if(loadregc == nullptr){
+        loadregc = op.getOperation();
+      }
+    }
+    else if(memspace == 1){
+      if(loadga == nullptr){
+        loadga = op.getOperation();
+      }
+      else if(loadgb == nullptr){
+        loadgb = op.getOperation();
+      }
+    }
+  });
+  mlir::Operation* storeRegC = nullptr;
+  k_midder.walk([&](Operation* op){
+    if(storeRegC == nullptr){
+      if(mlir::dyn_cast<affine::AffineStoreOp>(op) != nullptr){
+        storeRegC =op;
+      }
+    }
+  });
+  
+  mlir::Value tz = threadParallel.getIVs()[0];
+  mlir::Value ivK = kouter.getInductionVar();
+  mlir::Value ivSplitU = k_midder.getInductionVar();
+
+  mlir::OpBuilder builder = KernelCodeGen::getBuilder(k_midder,Position::begin);
+  auto loops = createWarpThreadScatterizeLoops(builder,config);
+  auto loopWRM = loops[0];
+  auto loopWRN = loops[1];
+  auto loopTRM = loops[2];
+  auto loopTRN = loops[3];
+  auto loopAreaM = loops[4];
+  auto loopAreaN = loops[5];
+  // rewrite muladd ops with new map
+  mlir::AffineMap loadRegCMap = getLoadFromregCMap(builder,config);
+  auto iv_wrm = loopWRM.getInductionVar();
+  auto iv_trm = loopTRM.getInductionVar();
+  auto iv_area_m = loopAreaM.getInductionVar();
+  auto iv_wrn = loopWRN.getInductionVar();
+  auto iv_trn = loopTRN.getInductionVar();
+  auto iv_area_n = loopAreaN.getInductionVar();
+  
+  auto loadRegcOp = mlir::dyn_cast<mlir::affine::AffineLoadOp>(loadregc);
+  assert(loadRegcOp != nullptr && "loadRegcOp null");
+  auto new_loadregC = builder.create<affine::AffineLoadOp>(
+    builder.getUnknownLoc(),loadRegcOp.getMemref(),
+    loadRegCMap,
+    ValueRange({iv_wrm,iv_trm,iv_area_m,iv_wrn,iv_trn,iv_area_n}));
+  
+
+  auto loadgAOp = mlir::dyn_cast<mlir::affine::AffineLoadOp>(loadga);
+  assert(loadgAOp != nullptr && "loadgAOp null");
+  auto new_loadga = builder.create<affine::AffineLoadOp>(
+    builder.getUnknownLoc(),loadgAOp.getMemref(),
+    getLoadGlobalAMap(builder,config),
+    ValueRange({iv_wrm,iv_trm,iv_area_m, ivK, ivSplitU, tz}));
+
+  auto loadgBOp = mlir::dyn_cast<mlir::affine::AffineLoadOp>(loadgb);
+  assert(loadgBOp != nullptr && "loadgBOp null");
+  auto new_loadgb = builder.create<affine::AffineLoadOp>(
+    builder.getUnknownLoc(),loadgBOp.getMemref(),
+    getLoadGlobalBMap(builder,config),
+    ValueRange({iv_wrn,iv_trn,iv_area_n, ivK, ivSplitU, tz}));
+  
+  auto new_mul = builder.create<arith::MulFOp>(builder.getUnknownLoc(),new_loadga.getResult(), new_loadgb.getResult());
+  auto new_add = builder.create<arith::AddFOp>(builder.getUnknownLoc(),new_mul.getResult(), new_loadregC.getResult());
+
+  auto storeregCOp = mlir::dyn_cast<mlir::affine::AffineStoreOp>(storeRegC);
+  assert(storeregCOp != nullptr && "storeregCOp null");
+  auto new_stc = builder.create<affine::AffineStoreOp>(
+    builder.getUnknownLoc(),new_add.getResult(),storeregCOp.getMemref(),
+    getLoadFromregCMap(builder,config),
+    ValueRange({iv_wrm,iv_trm,iv_area_m, iv_wrn,iv_trn,iv_area_n}));
+  
+  // erase old ops
+  if(n_innerOp != nullptr){
+    auto op = mlir::dyn_cast<affine::AffineForOp>( n_innerOp);
+    op.erase();
+  }
+  if(m_innerOp != nullptr){
+    auto op = mlir::dyn_cast<affine::AffineForOp>( m_innerOp);
+    op.erase();
+  }
+  
+  // removeAffineForWithOps(mlir::dyn_cast<affine::AffineForOp>( m_innerOp));
+  return;
+}
+
+void scatterizeStoreGlobalC(mlir::affine::AffineParallelOp threadwork, const std::map<std::string, int>& config){
+  using namespace mlir;
+  mlir::Operation* storeGCOp = nullptr;
+  mlir::Operation* loadRegCOp = nullptr;
+  threadwork.walk([&](mlir::affine::AffineStoreOp op){
+    if(storeGCOp == nullptr){
+      if(tools::isOpAttrEqualToString(op,AttrDescription,"storeGC")){
+        storeGCOp = op.getOperation();
+        loadRegCOp = storeGCOp->getPrevNode();
+      }
+    }
+  });
+  auto outmostLoop = storeGCOp->getParentOp()->getParentOp();
+  tools::_opSetDescription(outmostLoop,"outmost");
+  auto b = getBuilder(outmostLoop, Position::after);
+  auto loops = createWarpThreadScatterizeLoops(b,config);
+  auto loopWRM = loops[0];
+  auto loopWRN = loops[1];
+  auto loopTRM = loops[2];
+  auto loopTRN = loops[3];
+  auto loopAreaM = loops[4];
+  auto loopAreaN = loops[5];
+  auto _loadRegCOp = mlir::dyn_cast<affine::AffineLoadOp>(loadRegCOp);
+  auto _storeGCOp = mlir::dyn_cast<affine::AffineStoreOp>(storeGCOp);
+
+  auto iv_wrm = loopWRM.getInductionVar();
+  auto iv_trm = loopWRN.getInductionVar();
+  auto iv_area_m = loopTRM.getInductionVar();
+  auto iv_wrn = loopTRN.getInductionVar();
+  auto iv_trn = loopAreaM.getInductionVar();
+  auto iv_area_n = loopAreaN.getInductionVar();
+
+  auto new_load = b.create<affine::AffineLoadOp>(
+    b.getUnknownLoc(),_loadRegCOp.getMemref(),
+    getLoadFromregCMap(b,config),
+    ValueRange({iv_wrm,iv_trm,iv_area_m, iv_wrn,iv_trn,iv_area_n}));
+  
+  auto new_st = b.create<affine::AffineStoreOp>(
+    b.getUnknownLoc(),new_load.getResult(),_storeGCOp.getMemref(),
+    getStoreGlobalCMap(b,config),
+    ValueRange({iv_wrm,iv_trm,iv_area_m, iv_wrn,iv_trn,iv_area_n}));
+  
+  outmostLoop->erase();
+  
+  return;
 }
 
 mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &carryVarLoop, std::vector<mlir::affine::AffineForOp> &loops) {

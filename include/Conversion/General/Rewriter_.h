@@ -130,6 +130,9 @@ void unroll(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineF
 
 void unrollAttribute(mlir::ModuleOp module, mlir::function_ref<bool(mlir::affine::AffineForOp)> unrollCheckFn);
 
+void OpSetDesc(mlir::Operation* op, const std::string& attrValue);
+
+
 }  // rewriter
 
 }  // KernelCodeGen

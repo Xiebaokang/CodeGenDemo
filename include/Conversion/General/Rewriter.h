@@ -10,6 +10,17 @@
 namespace KernelCodeGen {
 namespace Rewriter {
 
+void OpSetDesc(mlir::Operation* op, const std::string& attrValue);
+
+void changeLoopInvVar(mlir::affine::AffineForOp forOp, int k) ;
+
+void scatterize(mlir::affine::AffineForOp k_midder,
+  mlir::affine::AffineForOp kouter, 
+  mlir::affine::AffineParallelOp threadParallel, 
+  mlir::affine::AffineParallelOp gridParallel, 
+  const std::map<std::string, int>& config) ;
+
+void scatterizeStoreGlobalC(mlir::affine::AffineParallelOp threadwork, const std::map<std::string, int>& config);
 
 std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
 

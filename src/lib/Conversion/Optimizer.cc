@@ -89,9 +89,9 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto m_outer = m_axes[0], m_mider = m_axes[1], m_inner = m_axes[2];
     auto n_outer = n_axes[0], n_mider = n_axes[1], n_inner = n_axes[2];
 
+    llvm::outs() << "===== after split 1 =======\n";llvm::outs().flush(); module.dump();
     Rewriter::reorder({m_outer, n_outer, m_mider, n_mider, m_inner, n_inner});
-    Rewriter::OpSetDesc()
-    llvm::outs() << "===== after split & reorder =======\n";llvm::outs().flush(); module.dump();
+    llvm::outs() << "===== after reorder 1 =======\n";llvm::outs().flush(); module.dump();
 
     auto gridLevel = Rewriter::parallel({m_outer, n_outer});
     auto blockLevel = Rewriter::parallel({m_mider, n_mider});
@@ -99,6 +99,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     std::vector<mlir::affine::AffineForOp> tileCLoops{m_inner, n_inner};
     auto tileC = Rewriter::bufferizeLoopCarryVar(loopK, tileCLoops);
+    Rewriter::OpSetDesc(tileC.getDefiningOp(),"regC");
     LOG_DEBUG("===== after bufferizeLoopCarryVar =======\n",module);
 
     auto k_axes = Rewriter::split(loopK, 3, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_K"]});
@@ -108,8 +109,16 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     Rewriter::loopToParallelZ(k_inner, blockLevel);
     LOG_DEBUG("===== after loopToParallelZ =======\n",module);
     Rewriter::reorder({k_outer, k_mider, m_inner, n_inner});
-    LOG_DEBUG("===== after reorder =======\n",module);
+    Rewriter::OpSetDesc(k_outer,"k_outer");
+    Rewriter::OpSetDesc(k_mider,"k_mider");
+    Rewriter::OpSetDesc(m_inner,"m_inner");
+    Rewriter::OpSetDesc(n_inner,"n_inner");
 
+    LOG_DEBUG("===== after reorder =======\n",module);
+    Rewriter::scatterize(k_mider,k_outer,blockLevel,gridLevel,config);
+    LOG_DEBUG("===== after scatterize =======\n",module);
+    Rewriter::scatterizeStoreGlobalC(blockLevel, config);
+    LOG_DEBUG("===== after scatterizeStoreGlobalC =======\n",module);
     int64_t blockThreads;
     auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
     

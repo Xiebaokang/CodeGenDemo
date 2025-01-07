@@ -44,6 +44,9 @@ std::tuple<int64_t, int64_t, int64_t> getLoopBoundAndStep(mlir::affine::AffineFo
 
 void replaceAndErase(mlir::Operation* newOp, mlir::Operation* oldOp) {
   // 替换后面op使用到oldOp的值，且删除oldOp
+  auto oldAttrs = oldOp->getAttrs();
+  tools::_opCopyAttr(oldOp,newOp,AttrDescription);
+  // newOp->setAttrs(oldAttrs);
   auto oldResult = oldOp->getResult(0);
   oldResult.replaceAllUsesWith(newOp->getResult(0));
   oldOp->erase();

@@ -240,6 +240,7 @@ namespace tools {
   
   /* ******** for debug use *************** */
   void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
+  void _opCopyAttr(mlir::Operation* from,mlir::Operation* to , const std::string& name);
 
 }
 

@@ -55,14 +55,20 @@ void Matmul::buildNaiveExpress(mlir::ModuleOp module,
         else{
           ld_a = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*A*/operands[0], mlir::ValueRange({k, i}));
         }
+        tools::_opSetDescription(ld_a,"loadGA");
         auto ld_b = builder.create<mlir::affine::AffineLoadOp>(nestedLoc, /*B*/operands[1], mlir::ValueRange({k, j}));
+        tools::_opSetDescription(ld_b,"loadGB");
         auto mul = builder.create<mlir::arith::MulFOp>(nestedLoc, ld_a, ld_b);
+        tools::_opSetDescription(mul,"mulAB");
         auto add = builder.create<mlir::arith::AddFOp>(nestedLoc, mul, iterArgs[0]);
+        tools::_opSetDescription(add,"addFAB");
         builder.create<mlir::affine::AffineYieldOp>(nestedLoc, add.getResult());
       };
       auto Cij = nestedBuilder.create<mlir::affine::AffineForOp>(loc, /*lowerBound*/0, k, /*step*/1, mlir::ValueRange({zero.getResult()}), kLoopBody);
 
-      nestedBuilder.create<mlir::affine::AffineStoreOp>(loc, Cij.getResult(0), /*C*/operands[2], mlir::ValueRange({i, j}));
+      auto storeGC = nestedBuilder.create<mlir::affine::AffineStoreOp>(loc, Cij.getResult(0), /*C*/operands[2], mlir::ValueRange({i, j}));
+      tools::_opSetDescription(storeGC,"storeGC");
+
     }
   );
   // builder.restoreInsertionPoint(ip);

@@ -99,6 +99,13 @@ void _opSetDescription(mlir::Operation* op, const std::string& attrValue){
   op->setAttr(AttrDescription, b.getStringAttr(attrValue));
 }
 
-
+void _opCopyAttr(mlir::Operation* from,mlir::Operation* to , const std::string& name){
+  mlir::OpBuilder b(to->getContext());
+  for(auto p : from->getAttrs()){
+    if(p.getName() == name){
+      to->setAttr(p.getName(),p.getValue());
+    }
+  }
+}
 }  // namespace tools
 }  // namespace KernelCodeGen

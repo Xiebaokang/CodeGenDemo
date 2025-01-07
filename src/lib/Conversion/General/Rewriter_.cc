@@ -56,10 +56,6 @@ std::vector<mlir::Value> getParallelIdx(mlir::affine::AffineParallelOp parallelL
 }
 
 
-void OpSetDesc(mlir::Operation* op, const std::string& attrValue){
-  mlir::OpBuilder b(op->getContext());
-  op->setAttr("kcg.desc",b.getStringAttr(attrValue));
-}
 
 mlir::AffineExpr shiftAffineExprDim(mlir::MLIRContext* context, mlir::AffineExpr expr, int shift) {
   if (auto dimExpr_ = expr.dyn_cast<mlir::AffineDimExpr>()) {
@@ -158,7 +154,10 @@ int replaceIndexWithExpr(mlir::Value oldIv, std::vector<mlir::Value>& newIvs, Af
   return operands.size();
 }
 
-std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t>&& factors) {
+std::vector<mlir::affine::AffineForOp> split(
+  mlir::affine::AffineForOp forOp,
+  uint64_t num_output, 
+  std::vector<int64_t>&& factors) {
   auto upperBoundsVector = factors;
   factors.insert(factors.begin(), 1);
   assert(factors.size() == num_output);
@@ -288,6 +287,8 @@ std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, ui
 
   return loops;
 }
+
+
 
 mlir::Block* getClostScopeOp(mlir::Operation* op) {
   while (true) {
@@ -1688,6 +1689,12 @@ void change_double_buffer(mlir::affine::AffineForOp scope, mlir::Value buffer) {
   ///TODO: support more operations for change double buffer.
   
 }
+
+void OpSetDesc(mlir::Operation* op, const std::string& attrValue){
+  mlir::OpBuilder b(op->getContext());
+  op->setAttr("kcg.desc",b.getStringAttr(attrValue));
+}
+
 
 } // rewriter
 } // kernelcodegen
