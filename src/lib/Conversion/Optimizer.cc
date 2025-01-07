@@ -2,6 +2,8 @@
 #include <cfloat>
 #include "mlir/Dialect/AMDGPU/IR/AMDGPUDialect.h"
 #include <filesystem>
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/Pass.h"
 
 namespace KernelCodeGen {
 
@@ -313,7 +315,13 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     LOG_DEBUG("===== vectorize =======\n",module);
     
     // module.dump();
-    
+    mlir::PassManager pm { module.getContext() };
+    pm.addPass(mlir::createSymbolDCEPass());
+    pm.addPass(mlir::createCSEPass());
+    pm.addPass(mlir::createCanonicalizerPass());
+    pm.run(module);
+    LOG_DEBUG("===== after DCE =======\n",module);
+
     // auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
     // auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
     // auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, fragB, k_inner);
