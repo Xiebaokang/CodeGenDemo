@@ -29,8 +29,8 @@ enum class MdlOperatorType : int{
 
 class MatmulParams {
 public:
-  KcgDtype m_dtypeA, m_dtypeB, m_dtypeC;
-  int m_size,n_size,k_size;
+  KcgDtype m_dtypeA, m_dtypeB, m_dtypeC; // 3
+  int m_size,n_size,k_size;  // 3
   int m_BLOCK_SIZE_M;
   int m_BLOCK_SIZE_N;
   int m_BLOCK_SIZE_K;
@@ -42,10 +42,21 @@ public:
   int m_BLOCK_LAYOUT_N;
   int m_WARP_LAYOUT_M;
   int m_WARP_LAYOUT_N;
-  int m_isATranspose = 0;
+  int m_isATranspose = 0;  // 18
+  // recently-added-params
+  int m_GLOB_LOAD_WIDTH_A;
+  int m_GLOB_LOAD_WIDTH_B;
+  int m_WARP_SCATTER_WIDTH_A;
+  int m_WARP_SCATTER_WIDTH_B;
+  int m_THREAD_SCATTER_WIDTH_A;
+  int m_THREAD_SCATTER_WIDTH_B;
+  int m_LOCAL_SPLIT_U;
+  int m_BLOCK_MAPPING;
+  int m_GLOB_STORE_WIDTH;  // 27
+
 #ifdef COMPILE_AS_PYMODULE
   bool parse(PyObject* args){
-    if(PyArg_ParseTuple(args, std::string(18,'i').c_str(),
+    if(PyArg_ParseTuple(args, std::string(27,'i').c_str(),
       &m_BLOCK_SIZE_M,
       &m_BLOCK_SIZE_N,
       &m_BLOCK_SIZE_K,
@@ -57,9 +68,21 @@ public:
       &m_BLOCK_LAYOUT_N,
       &m_WARP_LAYOUT_M,
       &m_WARP_LAYOUT_N,
+    // recent-added
+      &m_GLOB_LOAD_WIDTH_A,
+      &m_GLOB_LOAD_WIDTH_B,
+      &m_WARP_SCATTER_WIDTH_A,
+      &m_WARP_SCATTER_WIDTH_B,
+      &m_THREAD_SCATTER_WIDTH_A,
+      &m_THREAD_SCATTER_WIDTH_B,
+      &m_LOCAL_SPLIT_U,
+      &m_BLOCK_MAPPING,
+      &m_GLOB_STORE_WIDTH,
+
       &m_dtypeA, &m_dtypeB, &m_dtypeC,
       &m_size,&n_size,&k_size,
       &m_isATranspose
+
     )){
       return true;
     }
@@ -232,7 +255,7 @@ int main(){
       {"BLOCK_SIZE_M", 64}, {"BLOCK_SIZE_N", 48}, {"BLOCK_SIZE_K", 32}, {"THREAD_SIZE_M", 4}, {"THREAD_SIZE_N", 6}, 
       {"GLOB_LOAD_WIDTH_A", 4}, {"GLOB_LOAD_WIDTH_B", 2}, 
       {"BLOCK_LAYOUT_Y", 2}, {"BLOCK_LAYOUT_X", 1}, {"WARP_LAYOUT_Y", 8}, {"WARP_LAYOUT_X", 8},
-      {"BLOCK_SCATTER_WIDTH_A", 2}, {"BLOCK_SCATTER_WIDTH_B", 2}, {"WARP_SCATTER_WIDTH_A", 2}, {"WARP_SCATTER_WIDTH_B", 2}, 
+      {"WARP_SCATTER_WIDTH_A", 2}, {"WARP_SCATTER_WIDTH_B", 2}, {"THREAD_SCATTER_WIDTH_A", 2}, {"THREAD_SCATTER_WIDTH_B", 2}, 
       {"LOCAL_SPLIT_U", 2}, {"BLOCK_MAPPING", 8}, {"WARP_SIZE", 64}, {"GLOB_STORE_WIDTH", 2}, 
       {KEY_DTYPE_A, (int)KcgDtype::float16},
       {KEY_DTYPE_B, (int)KcgDtype::float16},

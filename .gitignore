@@ -8,3 +8,4 @@ log
 ceshiData/*
 dump/*
 *pmc_results_*.txt
+include/config.h

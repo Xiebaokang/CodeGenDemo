@@ -61,10 +61,10 @@ template <
   const int WARP_LAYOUT_Y,
   const int WARP_LAYOUT_X,
 
-  const int BLOCK_SCATTER_WIDTH_A,
-  const int BLOCK_SCATTER_WIDTH_B,
   const int WARP_SCATTER_WIDTH_A,
   const int WARP_SCATTER_WIDTH_B,
+  const int THREAD_SCATTER_WIDTH_A,
+  const int THREAD_SCATTER_WIDTH_B,
   
   const int LOCAL_SPLIT_U,   /*2*/
   const int BLOCK_MAPPING,
@@ -96,10 +96,10 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
   const int lane_x = lane_id % WARP_LAYOUT_X;
 
   // split number
-  const int BLOCK_REPEAT_A = TM / BLOCK_SCATTER_WIDTH_A;  // 4 / 2 = 2 
-  const int BLOCK_REPEAT_B = TN / BLOCK_SCATTER_WIDTH_B;  // 6 / 2 = 3
-  const int WARP_REPEAT_A = BLOCK_SCATTER_WIDTH_A / WARP_SCATTER_WIDTH_A;  // 2 / 2 = 1
-  const int WARP_REPEAT_B = BLOCK_SCATTER_WIDTH_B / WARP_SCATTER_WIDTH_B;  // 2 / 2 = 1
+  const int BLOCK_REPEAT_A = TM / WARP_SCATTER_WIDTH_A;  // 4 / 2 = 2 
+  const int BLOCK_REPEAT_B = TN / WARP_SCATTER_WIDTH_B;  // 6 / 2 = 3
+  const int WARP_REPEAT_A = WARP_SCATTER_WIDTH_A / THREAD_SCATTER_WIDTH_A;  // 2 / 2 = 1
+  const int WARP_REPEAT_B = WARP_SCATTER_WIDTH_B / THREAD_SCATTER_WIDTH_B;  // 2 / 2 = 1
 
   // LDSMemory size: BM * BN * 2 > BM * BK * 2 + BN * BK * 2 ? BM * BN * 2 : BM * BK * 2 + BN * BK * 2
   const int LDS_SZIE = (BM * BN * 2) > (BM + BN) * BK * 2 ? (BM * BN * 2) : (BM + BN) * BK * 2;
@@ -181,22 +181,22 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
   for (int i=0; i<BLOCK_REPEAT_A; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_A; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                         j * WARP_SCATTER_WIDTH_A], 
+      VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                         j * THREAD_SCATTER_WIDTH_A], 
                                     &shA[tz * BM + 
-                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                         (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                         (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
     }
   }
   #pragma unroll
   for (int i=0; i<BLOCK_REPEAT_B; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_B; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                         j * WARP_SCATTER_WIDTH_B], 
+      VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                         j * THREAD_SCATTER_WIDTH_B], 
                                     &shB[tz * BN + 
-                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                         (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                         (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
     }
   }
 
@@ -245,13 +245,13 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
       for (int i=0; i<BLOCK_REPEAT_A; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_A; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
-                                            i * BLOCK_SCATTER_WIDTH_A + 
-                                            j * WARP_SCATTER_WIDTH_A], 
+          VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
+                                            i * WARP_SCATTER_WIDTH_A + 
+                                            j * THREAD_SCATTER_WIDTH_A], 
                                         &shA[read_buffer_id * BM * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BM + 
-                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                            (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                            (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
         }
       }
 
@@ -259,13 +259,13 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
       for (int i=0; i<BLOCK_REPEAT_B; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_B; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
-                                             i * BLOCK_SCATTER_WIDTH_B + 
-                                             j * WARP_SCATTER_WIDTH_B], 
+          VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
+                                             i * WARP_SCATTER_WIDTH_B + 
+                                             j * THREAD_SCATTER_WIDTH_B], 
                                         &shB[read_buffer_id * BN * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BN + 
-                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                            (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                            (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
         }
       }
 
@@ -333,24 +333,24 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
     for (int i=0; i<BLOCK_REPEAT_A; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_A; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                           j * WARP_SCATTER_WIDTH_A], 
+        VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                           j * THREAD_SCATTER_WIDTH_A], 
                                       &shA[(read_buffer_id^1) * BM * BK + 
                                            tz * BM + 
-                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                           (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                           (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
       }
     }
     #pragma unroll
     for (int i=0; i<BLOCK_REPEAT_B; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_B; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                           j * WARP_SCATTER_WIDTH_B], 
+        VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                           j * THREAD_SCATTER_WIDTH_B], 
                                       &shB[(read_buffer_id^1) * BN * BK + 
                                            tz * BN + 
-                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                           (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                           (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
       }
     }
   }
@@ -376,12 +376,12 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
-                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * BN + 
-                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN +
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
+                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * BN + 
+                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN +
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -440,11 +440,11 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * N + 
-                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN + 
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * N + 
+                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -468,10 +468,10 @@ template <
   const int WARP_LAYOUT_Y,
   const int WARP_LAYOUT_X,
 
-  const int BLOCK_SCATTER_WIDTH_A,
-  const int BLOCK_SCATTER_WIDTH_B,
   const int WARP_SCATTER_WIDTH_A,
   const int WARP_SCATTER_WIDTH_B,
+  const int THREAD_SCATTER_WIDTH_A,
+  const int THREAD_SCATTER_WIDTH_B,
   
   const int LOCAL_SPLIT_U,   /*2*/
   const int BLOCK_MAPPING,
@@ -503,10 +503,10 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
   const int lane_x = lane_id % WARP_LAYOUT_X;
 
   // split number
-  const int BLOCK_REPEAT_A = TM / BLOCK_SCATTER_WIDTH_A;  // 4 / 2 = 2 
-  const int BLOCK_REPEAT_B = TN / BLOCK_SCATTER_WIDTH_B;  // 6 / 2 = 3
-  const int WARP_REPEAT_A = BLOCK_SCATTER_WIDTH_A / WARP_SCATTER_WIDTH_A;  // 2 / 2 = 1
-  const int WARP_REPEAT_B = BLOCK_SCATTER_WIDTH_B / WARP_SCATTER_WIDTH_B;  // 2 / 2 = 1
+  const int BLOCK_REPEAT_A = TM / WARP_SCATTER_WIDTH_A;  // 4 / 2 = 2 
+  const int BLOCK_REPEAT_B = TN / WARP_SCATTER_WIDTH_B;  // 6 / 2 = 3
+  const int WARP_REPEAT_A = WARP_SCATTER_WIDTH_A / THREAD_SCATTER_WIDTH_A;  // 2 / 2 = 1
+  const int WARP_REPEAT_B = WARP_SCATTER_WIDTH_B / THREAD_SCATTER_WIDTH_B;  // 2 / 2 = 1
 
   // LDSMemory size: BM * BN * 2 > BM * BK * 2 + BN * BK * 2 ? BM * BN * 2 : BM * BK * 2 + BN * BK * 2
   const int LDS_SZIE = (BM * BN * 2) > (BM + BN) * BK * 2 ? (BM * BN * 2) : (BM + BN) * BK * 2;
@@ -588,22 +588,22 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
   for (int i=0; i<BLOCK_REPEAT_A; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_A; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                         j * WARP_SCATTER_WIDTH_A], 
+      VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                         j * THREAD_SCATTER_WIDTH_A], 
                                     &shA[tz * BM + 
-                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                         (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                         (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
     }
   }
   #pragma unroll
   for (int i=0; i<BLOCK_REPEAT_B; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_B; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                         j * WARP_SCATTER_WIDTH_B], 
+      VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                         j * THREAD_SCATTER_WIDTH_B], 
                                     &shB[tz * BN + 
-                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                         (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                         (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
     }
   }
 
@@ -652,13 +652,13 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_A; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_A; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
-                                            i * BLOCK_SCATTER_WIDTH_A + 
-                                            j * WARP_SCATTER_WIDTH_A], 
+          VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
+                                            i * WARP_SCATTER_WIDTH_A + 
+                                            j * THREAD_SCATTER_WIDTH_A], 
                                         &shA[read_buffer_id * BM * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BM + 
-                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                            (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                            (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
         }
       }
 
@@ -666,13 +666,13 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_B; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_B; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
-                                             i * BLOCK_SCATTER_WIDTH_B + 
-                                             j * WARP_SCATTER_WIDTH_B], 
+          VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
+                                             i * WARP_SCATTER_WIDTH_B + 
+                                             j * THREAD_SCATTER_WIDTH_B], 
                                         &shB[read_buffer_id * BN * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BN + 
-                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                            (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                            (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
         }
       }
 
@@ -740,24 +740,24 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
     for (int i=0; i<BLOCK_REPEAT_A; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_A; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                           j * WARP_SCATTER_WIDTH_A], 
+        VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                           j * THREAD_SCATTER_WIDTH_A], 
                                       &shA[(read_buffer_id^1) * BM * BK + 
                                            tz * BM + 
-                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                           (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                           (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
       }
     }
     #pragma unroll
     for (int i=0; i<BLOCK_REPEAT_B; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_B; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                           j * WARP_SCATTER_WIDTH_B], 
+        VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                           j * THREAD_SCATTER_WIDTH_B], 
                                       &shB[(read_buffer_id^1) * BN * BK + 
                                            tz * BN + 
-                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                           (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                           (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
       }
     }
   }
@@ -785,12 +785,12 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
-                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * BN + 
-                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN +
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
+                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * BN + 
+                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN +
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -863,11 +863,11 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * N + 
-                                               bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                        &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN + 
-                                               i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * N + 
+                                               bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                        &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
+                                               i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -891,10 +891,10 @@ template <
   const int WARP_LAYOUT_Y,
   const int WARP_LAYOUT_X,
 
-  const int BLOCK_SCATTER_WIDTH_A,
-  const int BLOCK_SCATTER_WIDTH_B,
   const int WARP_SCATTER_WIDTH_A,
   const int WARP_SCATTER_WIDTH_B,
+  const int THREAD_SCATTER_WIDTH_A,
+  const int THREAD_SCATTER_WIDTH_B,
   
   const int LOCAL_SPLIT_U,   /*2*/
   const int BLOCK_MAPPING,
@@ -927,10 +927,10 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
   const int lane_x = lane_id % WARP_LAYOUT_X;
 
   // split number
-  const int BLOCK_REPEAT_A = TM / BLOCK_SCATTER_WIDTH_A;  // 4 / 2 = 2 
-  const int BLOCK_REPEAT_B = TN / BLOCK_SCATTER_WIDTH_B;  // 6 / 2 = 3
-  const int WARP_REPEAT_A = BLOCK_SCATTER_WIDTH_A / WARP_SCATTER_WIDTH_A;  // 2 / 2 = 1
-  const int WARP_REPEAT_B = BLOCK_SCATTER_WIDTH_B / WARP_SCATTER_WIDTH_B;  // 2 / 2 = 1
+  const int BLOCK_REPEAT_A = TM / WARP_SCATTER_WIDTH_A;  // 4 / 2 = 2 
+  const int BLOCK_REPEAT_B = TN / WARP_SCATTER_WIDTH_B;  // 6 / 2 = 3
+  const int WARP_REPEAT_A = WARP_SCATTER_WIDTH_A / THREAD_SCATTER_WIDTH_A;  // 2 / 2 = 1
+  const int WARP_REPEAT_B = WARP_SCATTER_WIDTH_B / THREAD_SCATTER_WIDTH_B;  // 2 / 2 = 1
 
   // LDSMemory size: BM * BN * 2 > BM * BK * 2 + BN * BK * 2 ? BM * BN * 2 : BM * BK * 2 + BN * BK * 2
   const int LDS_SZIE = (BM * BN * 2) > (BM + BN) * BK * 2 ? (BM * BN * 2) : (BM + BN) * BK * 2;
@@ -999,22 +999,22 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
   for (int i=0; i<BLOCK_REPEAT_A; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_A; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                         j * WARP_SCATTER_WIDTH_A], 
+      VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                         j * THREAD_SCATTER_WIDTH_A], 
                                     &shA[tz * BM + 
-                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                         (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                         (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
     }
   }
   #pragma unroll
   for (int i=0; i<BLOCK_REPEAT_B; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_B; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                         j * WARP_SCATTER_WIDTH_B], 
+      VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                         j * THREAD_SCATTER_WIDTH_B], 
                                     &shB[tz * BN + 
-                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                         (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                         (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
     }
   }
 
@@ -1052,13 +1052,13 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_A; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_A; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
-                                            i * BLOCK_SCATTER_WIDTH_A + 
-                                            j * WARP_SCATTER_WIDTH_A], 
+          VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
+                                            i * WARP_SCATTER_WIDTH_A + 
+                                            j * THREAD_SCATTER_WIDTH_A], 
                                         &shA[read_buffer_id * BM * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BM + 
-                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                            (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                            (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
         }
       }
 
@@ -1066,13 +1066,13 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_B; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_B; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
-                                             i * BLOCK_SCATTER_WIDTH_B + 
-                                             j * WARP_SCATTER_WIDTH_B], 
+          VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
+                                             i * WARP_SCATTER_WIDTH_B + 
+                                             j * THREAD_SCATTER_WIDTH_B], 
                                         &shB[read_buffer_id * BN * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BN + 
-                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                            (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                            (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
         }
       }
 
@@ -1127,24 +1127,24 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
     for (int i=0; i<BLOCK_REPEAT_A; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_A; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                           j * WARP_SCATTER_WIDTH_A], 
+        VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                           j * THREAD_SCATTER_WIDTH_A], 
                                       &shA[(read_buffer_id^1) * BM * BK + 
                                            tz * BM + 
-                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                           (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                           (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
       }
     }
     #pragma unroll
     for (int i=0; i<BLOCK_REPEAT_B; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_B; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                           j * WARP_SCATTER_WIDTH_B], 
+        VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                           j * THREAD_SCATTER_WIDTH_B], 
                                       &shB[(read_buffer_id^1) * BN * BK + 
                                            tz * BN + 
-                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                           (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                           (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
       }
     }
   }
@@ -1168,12 +1168,12 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
-                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * BN + 
-                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN +
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
+                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * BN + 
+                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN +
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -1223,11 +1223,11 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * N + 
-                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN + 
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * N + 
+                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -1251,10 +1251,10 @@ template <
   const int WARP_LAYOUT_Y,
   const int WARP_LAYOUT_X,
 
-  const int BLOCK_SCATTER_WIDTH_A,
-  const int BLOCK_SCATTER_WIDTH_B,
   const int WARP_SCATTER_WIDTH_A,
   const int WARP_SCATTER_WIDTH_B,
+  const int THREAD_SCATTER_WIDTH_A,
+  const int THREAD_SCATTER_WIDTH_B,
   
   const int LOCAL_SPLIT_U,   /*2*/
   const int BLOCK_MAPPING,
@@ -1288,10 +1288,10 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
   const int lane_x = lane_id % WARP_LAYOUT_X;
 
   // split number
-  const int BLOCK_REPEAT_A = TM / BLOCK_SCATTER_WIDTH_A;  // 4 / 2 = 2 
-  const int BLOCK_REPEAT_B = TN / BLOCK_SCATTER_WIDTH_B;  // 6 / 2 = 3
-  const int WARP_REPEAT_A = BLOCK_SCATTER_WIDTH_A / WARP_SCATTER_WIDTH_A;  // 2 / 2 = 1
-  const int WARP_REPEAT_B = BLOCK_SCATTER_WIDTH_B / WARP_SCATTER_WIDTH_B;  // 2 / 2 = 1
+  const int BLOCK_REPEAT_A = TM / WARP_SCATTER_WIDTH_A;  // 4 / 2 = 2 
+  const int BLOCK_REPEAT_B = TN / WARP_SCATTER_WIDTH_B;  // 6 / 2 = 3
+  const int WARP_REPEAT_A = WARP_SCATTER_WIDTH_A / THREAD_SCATTER_WIDTH_A;  // 2 / 2 = 1
+  const int WARP_REPEAT_B = WARP_SCATTER_WIDTH_B / THREAD_SCATTER_WIDTH_B;  // 2 / 2 = 1
 
   // LDSMemory size: BM * BN * 2 > BM * BK * 2 + BN * BK * 2 ? BM * BN * 2 : BM * BK * 2 + BN * BK * 2
   const int LDS_SZIE = (BM * BN * 2) > (BM + BN) * BK * 2 ? (BM * BN * 2) : (BM + BN) * BK * 2;
@@ -1360,22 +1360,22 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
   for (int i=0; i<BLOCK_REPEAT_A; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_A; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                         j * WARP_SCATTER_WIDTH_A], 
+      VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                         j * THREAD_SCATTER_WIDTH_A], 
                                     &shA[tz * BM + 
-                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                         (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                         (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                         (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
     }
   }
   #pragma unroll
   for (int i=0; i<BLOCK_REPEAT_B; i++) {
     #pragma unroll
     for (int j=0; j<WARP_REPEAT_B; j++) {
-      VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                         j * WARP_SCATTER_WIDTH_B], 
+      VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                         j * THREAD_SCATTER_WIDTH_B], 
                                     &shB[tz * BN + 
-                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                         (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                         (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                         (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
     }
   }
 
@@ -1413,13 +1413,13 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_A; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_A; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
-                                            i * BLOCK_SCATTER_WIDTH_A + 
-                                            j * WARP_SCATTER_WIDTH_A], 
+          VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[((bk + 1) % 2) * TM +
+                                            i * WARP_SCATTER_WIDTH_A + 
+                                            j * THREAD_SCATTER_WIDTH_A], 
                                         &shA[read_buffer_id * BM * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BM + 
-                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                            (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                            (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                            (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
         }
       }
 
@@ -1427,13 +1427,13 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
       for (int i=0; i<BLOCK_REPEAT_B; i++) {
         #pragma unroll
         for (int j=0; j<WARP_REPEAT_B; j++) {
-          VecCpy<WARP_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
-                                             i * BLOCK_SCATTER_WIDTH_B + 
-                                             j * WARP_SCATTER_WIDTH_B], 
+          VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[((bk + 1) % 2) * TN + 
+                                             i * WARP_SCATTER_WIDTH_B + 
+                                             j * THREAD_SCATTER_WIDTH_B], 
                                         &shB[read_buffer_id * BN * BK + 
                                             ((bk + 1) * LOCAL_SPLIT_U + tz) * BN + 
-                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                            (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                            (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                            (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
         }
       }
 
@@ -1488,24 +1488,24 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
     for (int i=0; i<BLOCK_REPEAT_A; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_A; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_A>(&regA[i * BLOCK_SCATTER_WIDTH_A + 
-                                           j * WARP_SCATTER_WIDTH_A], 
+        VecCpy<THREAD_SCATTER_WIDTH_A>(&regA[i * WARP_SCATTER_WIDTH_A + 
+                                           j * THREAD_SCATTER_WIDTH_A], 
                                       &shA[(read_buffer_id^1) * BM * BK + 
                                            tz * BM + 
-                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + 
-                                           (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]);
+                                           (i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + 
+                                           (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]);
       }
     }
     #pragma unroll
     for (int i=0; i<BLOCK_REPEAT_B; i++) {
       #pragma unroll
       for (int j=0; j<WARP_REPEAT_B; j++) {
-        VecCpy<WARP_SCATTER_WIDTH_B>(&regB[i * BLOCK_SCATTER_WIDTH_B + 
-                                           j * WARP_SCATTER_WIDTH_B], 
+        VecCpy<THREAD_SCATTER_WIDTH_B>(&regB[i * WARP_SCATTER_WIDTH_B + 
+                                           j * THREAD_SCATTER_WIDTH_B], 
                                       &shB[(read_buffer_id^1) * BN * BK + 
                                            tz * BN + 
-                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + 
-                                           (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]);
+                                           (i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + 
+                                           (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]);
       }
     }
   }
@@ -1529,12 +1529,12 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
-                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * BN + 
-                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN +
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&LDSMemory[tz * LDS_C_STRIDE + 
+                                                      ((i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * BN + 
+                                                      (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN +
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -1584,11 +1584,11 @@ __global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, co
           #pragma unroll
           for (int j1=0; j1<WARP_REPEAT_B; j1++) {
             #pragma unroll 
-            for (int k=0; k<WARP_SCATTER_WIDTH_A; k++) {
-              VecCpy<WARP_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k) * N + 
-                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * BLOCK_SCATTER_WIDTH_A + j0 * WARP_SCATTER_WIDTH_A + k) * TN + 
-                                                      i1 * BLOCK_SCATTER_WIDTH_B + j1 * WARP_SCATTER_WIDTH_B]);
+            for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
+              VecCpy<THREAD_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k) * N + 
+                                              bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
+                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -1667,10 +1667,10 @@ int main() {
   const int WARP_LAYOUT_Y = 8;
   const int WARP_LAYOUT_X = 8;
 
-  const int BLOCK_SCATTER_WIDTH_A = 2;
-  const int BLOCK_SCATTER_WIDTH_B = 2;
   const int WARP_SCATTER_WIDTH_A = 2;
   const int WARP_SCATTER_WIDTH_B = 2;
+  const int THREAD_SCATTER_WIDTH_A = 2;
+  const int THREAD_SCATTER_WIDTH_B = 2;
 
   const int LOCAL_SPLIT_U = 2;   /*2*/
   const int BLOCK_MAPPING = 8;
@@ -1715,8 +1715,8 @@ int main() {
     //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
     //   BLOCK_LAYOUT_Y, BLOCK_LAYOUT_X,
     //   WARP_LAYOUT_Y, WARP_LAYOUT_X, 
-    //   BLOCK_SCATTER_WIDTH_A, BLOCK_SCATTER_WIDTH_B, 
-    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B,
+    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
     //   LOCAL_SPLIT_U, BLOCK,_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
     // 在origin的基础上修改，修改splitu存储方式，直接从shared加到reg上
@@ -1724,8 +1724,8 @@ int main() {
     //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
     //   BLOCK_LAYOUT_Y, BLOCK_LAYOUT_X,
     //   WARP_LAYOUT_Y, WARP_LAYOUT_X, 
-    //   BLOCK_SCATTER_WIDTH_A, BLOCK_SCATTER_WIDTH_B, 
-    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B,
+    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
     //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
     
     // 在matmul_1的基础上修改，讲所有glob load的方式改为顺序load
@@ -1735,8 +1735,8 @@ int main() {
     //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
     //   BLOCK_LAYOUT_Y, BLOCK_LAYOUT_X,
     //   WARP_LAYOUT_Y, WARP_LAYOUT_X, 
-    //   BLOCK_SCATTER_WIDTH_A, BLOCK_SCATTER_WIDTH_B, 
-    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B,
+    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
     //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
     // 在matmul_2的基础上修改，将L2 cache的方式修改为s形
@@ -1744,8 +1744,8 @@ int main() {
       GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
       BLOCK_LAYOUT_Y, BLOCK_LAYOUT_X,
       WARP_LAYOUT_Y, WARP_LAYOUT_X, 
-      BLOCK_SCATTER_WIDTH_A, BLOCK_SCATTER_WIDTH_B, 
-      WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B,
+      WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+      THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
       LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
     hipEventRecord(stopEvent, 0);

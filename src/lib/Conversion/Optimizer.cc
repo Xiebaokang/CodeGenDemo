@@ -67,10 +67,10 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
   const int GLOB_LOAD_ROW_WIDTH_B = THREAD_NUM / BK * config["GLOB_LOAD_WIDTH_B"];
 
   // shared -> reg
-  const int BLOCK_REPEAT_A = TM / config["BLOCK_SCATTER_WIDTH_A"];
-  const int WARP_REPEAT_A = config["BLOCK_SCATTER_WIDTH_A"] / config["WARP_SCATTER_WIDTH_A"];
-  const int BLOCK_REPEAT_B = TN / config["BLOCK_SCATTER_WIDTH_B"];
-  const int WARP_REPEAT_B = config["BLOCK_SCATTER_WIDTH_B"] / config["WARP_SCATTER_WIDTH_B"];
+  const int BLOCK_REPEAT_A = TM / config["WARP_SCATTER_WIDTH_A"];
+  const int WARP_REPEAT_A = config["WARP_SCATTER_WIDTH_A"] / config["THREAD_SCATTER_WIDTH_A"];
+  const int BLOCK_REPEAT_B = TN / config["WARP_SCATTER_WIDTH_B"];
+  const int WARP_REPEAT_B = config["WARP_SCATTER_WIDTH_B"] / config["THREAD_SCATTER_WIDTH_B"];
 
   // reduce C (sharedC to regC)
   const int GLOB_STORE_ROW_WIDTH = THREAD_NUM / BM * config["GLOB_STORE_WIDTH"];
@@ -118,15 +118,15 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
     auto lane_x = lane_id % config["WARP_LAYOUT_X"];
     if (mapIdentifier == "loadFragA") {
-      // sh_A[bk + tz][(i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A]
+      // sh_A[bk + tz][(i * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A]
       exprs.push_back(dim0 + tz);
-      exprs.push_back((dim2 * config["BLOCK_LAYOUT_Y"] + warp_y) * config["WARP_LAYOUT_Y"] * config["BLOCK_SCATTER_WIDTH_A"] + 
-                      (dim3 * config["WARP_LAYOUT_Y"] + lane_y) * config["WARP_SCATTER_WIDTH_A"]);
+      exprs.push_back((dim2 * config["BLOCK_LAYOUT_Y"] + warp_y) * config["WARP_LAYOUT_Y"] * config["WARP_SCATTER_WIDTH_A"] + 
+                      (dim3 * config["WARP_LAYOUT_Y"] + lane_y) * config["THREAD_SCATTER_WIDTH_A"]);
     } else {
-      // sh_B[bk + tz][(i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]
+      // sh_B[bk + tz][(i * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]
       exprs.push_back(dim0 + tz);
-      exprs.push_back((dim2 * config["BLOCK_LAYOUT_X"] + warp_x) * config["WARP_LAYOUT_X"] * config["BLOCK_SCATTER_WIDTH_B"] + 
-                      (dim3 * config["WARP_LAYOUT_X"] + lane_x) * config["WARP_SCATTER_WIDTH_B"]);
+      exprs.push_back((dim2 * config["BLOCK_LAYOUT_X"] + warp_x) * config["WARP_LAYOUT_X"] * config["WARP_SCATTER_WIDTH_B"] + 
+                      (dim3 * config["WARP_LAYOUT_X"] + lane_x) * config["THREAD_SCATTER_WIDTH_B"]);
     }
     return mlir::AffineMap::get(/*dimCount*/4, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheReadA" || mapIdentifier == "cacheReadB") {
@@ -142,12 +142,12 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto warp_x = warp_id % config["BLOCK_LAYOUT_X"];
     auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
     auto lane_x = lane_id % config["WARP_LAYOUT_X"];
-    // C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * BLOCK_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * WARP_SCATTER_WIDTH_A + k)]
-    //  [bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * BLOCK_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * WARP_SCATTER_WIDTH_B]]
-    exprs.push_back(dim0 * BM + (dim3 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["BLOCK_SCATTER_WIDTH_A"]) + 
-                                (dim4 * config["WARP_LAYOUT_Y"]) + (lane_y * config["WARP_SCATTER_WIDTH_A"]) + dim5);
-    exprs.push_back(dim1 * BN + (dim6 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["BLOCK_SCATTER_WIDTH_B"]) + 
-                                (dim7 * config["WARP_LAYOUT_X"]) + (lane_x * config["WARP_SCATTER_WIDTH_B"]) + dim8);
+    // C[(by * BM + (i0 * BLOCK_LAYOUT_Y + warp_y) * WARP_LAYOUT_Y * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_Y + lane_y) * THREAD_SCATTER_WIDTH_A + k)]
+    //  [bx * BN + (i1 * BLOCK_LAYOUT_X + warp_x) * WARP_LAYOUT_X * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_X + lane_x) * THREAD_SCATTER_WIDTH_B]]
+    exprs.push_back(dim0 * BM + (dim3 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["WARP_SCATTER_WIDTH_A"]) + 
+                                (dim4 * config["WARP_LAYOUT_Y"]) + (lane_y * config["THREAD_SCATTER_WIDTH_A"]) + dim5);
+    exprs.push_back(dim1 * BN + (dim6 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["WARP_SCATTER_WIDTH_B"]) + 
+                                (dim7 * config["WARP_LAYOUT_X"]) + (lane_x * config["THREAD_SCATTER_WIDTH_B"]) + dim8);
     return mlir::AffineMap::get(/*dimCount*/9, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "cacheWriteShC") {
     // load regC to sharedC
@@ -162,10 +162,10 @@ mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, 
     auto lane_y = lane_id.floorDiv(config["WARP_LAYOUT_X"]);
     auto lane_x = lane_id % config["WARP_LAYOUT_X"];
     exprs.push_back(tz);
-    exprs.push_back((dim1 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["BLOCK_SCATTER_WIDTH_A"]) + 
-                    (dim2 * config["WARP_LAYOUT_Y"]) + (lane_y * config["WARP_SCATTER_WIDTH_A"]) + dim3);
-    exprs.push_back((dim4 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["BLOCK_SCATTER_WIDTH_B"]) + 
-                    (dim5 * config["WARP_LAYOUT_X"]) + (lane_x * config["WARP_SCATTER_WIDTH_B"]) + dim6);
+    exprs.push_back((dim1 * config["BLOCK_LAYOUT_Y"] * config["WARP_LAYOUT_Y"]) + (warp_y * config["WARP_SCATTER_WIDTH_A"]) + 
+                    (dim2 * config["WARP_LAYOUT_Y"]) + (lane_y * config["THREAD_SCATTER_WIDTH_A"]) + dim3);
+    exprs.push_back((dim4 * config["BLOCK_LAYOUT_X"] * config["WARP_LAYOUT_X"]) + (warp_x * config["WARP_SCATTER_WIDTH_B"]) + 
+                    (dim5 * config["WARP_LAYOUT_X"]) + (lane_x * config["THREAD_SCATTER_WIDTH_B"]) + dim6);
     return mlir::AffineMap::get(/*dimCount*/7, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
   } else if (mapIdentifier == "reduceC") {
     // reduce C (sharedC add to regC)
@@ -264,10 +264,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto loadFragAMap = getAffineMap("loadFragA", builder, config);
     auto loadFragA = Rewriter::read(smA, regA, loadFragAMap, {k_mider.getInductionVar(), threadIdx[0]}, 
-                                    {config["BLOCK_SCATTER_WIDTH_A"], config["WARP_SCATTER_WIDTH_A"]}, k_mider, Position::begin);
+                                    {config["WARP_SCATTER_WIDTH_A"], config["THREAD_SCATTER_WIDTH_A"]}, k_mider, Position::begin);
     auto loadFragBMap = getAffineMap("loadFragB", builder, config);
     auto loadFragB = Rewriter::read(smB, regB, loadFragBMap, {k_mider.getInductionVar(), threadIdx[0]}, 
-                                    {config["BLOCK_SCATTER_WIDTH_B"], config["WARP_SCATTER_WIDTH_B"]}, loadFragA, Position::after);
+                                    {config["WARP_SCATTER_WIDTH_B"], config["THREAD_SCATTER_WIDTH_B"]}, loadFragA, Position::after);
     LOG_DEBUG("===== read sh_A/B =======\n",module);
 
     Rewriter::cache_read(n_inner, A, regA, getAffineMap("cacheReadA", builder, config), {m_inner.getInductionVar()});
@@ -276,8 +276,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto writeCbody = Rewriter::get_write(blockLevel, C);
     assert(writeCbody.size() == 1);
-    auto m_inner_axes = Rewriter::split(writeCbody[0][0], 3, {config["BLOCK_SCATTER_WIDTH_A"], config["WARP_SCATTER_WIDTH_A"]});
-    auto n_inner_axes = Rewriter::split(writeCbody[0][1], 3, {config["BLOCK_SCATTER_WIDTH_B"], config["WARP_SCATTER_WIDTH_B"]});
+    auto m_inner_axes = Rewriter::split(writeCbody[0][0], 3, {config["WARP_SCATTER_WIDTH_A"], config["THREAD_SCATTER_WIDTH_A"]});
+    auto n_inner_axes = Rewriter::split(writeCbody[0][1], 3, {config["WARP_SCATTER_WIDTH_B"], config["THREAD_SCATTER_WIDTH_B"]});
     auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1], m_inner_2 = m_inner_axes[2];
     auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1], n_inner_2 = n_inner_axes[2];
     Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1, m_inner_2, n_inner_2});
@@ -311,7 +311,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       LOG_DEBUG("===== load cache_write regC to C =======\n",module);
     }
 
-    Rewriter::vectorize(n_inner_2, config["WARP_SCATTER_WIDTH_B"]);
+    Rewriter::vectorize(n_inner_2, config["THREAD_SCATTER_WIDTH_B"]);
     LOG_DEBUG("===== vectorize =======\n",module);
     
     // module.dump();
