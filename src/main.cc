@@ -30,7 +30,8 @@ enum class MdlOperatorType : int{
 class MatmulParams {
 public:
   KcgDtype m_dtypeA, m_dtypeB, m_dtypeC; // 3
-  int m_size,n_size,k_size;  // 3
+  int m_size,n_size,k_size;  // 3+3=6
+  int m_isATranspose = 0;  
   int m_BLOCK_SIZE_M;
   int m_BLOCK_SIZE_N;
   int m_BLOCK_SIZE_K;
@@ -41,8 +42,7 @@ public:
   int m_BLOCK_LAYOUT_M;
   int m_BLOCK_LAYOUT_N;
   int m_WARP_LAYOUT_M;
-  int m_WARP_LAYOUT_N;
-  int m_isATranspose = 0;  // 18
+  int m_WARP_LAYOUT_N;  // 12+6=18
   // recently-added-params
   int m_GLOB_LOAD_WIDTH_A;
   int m_GLOB_LOAD_WIDTH_B;
@@ -52,7 +52,7 @@ public:
   int m_THREAD_SCATTER_WIDTH_B;
   int m_LOCAL_SPLIT_U;
   int m_BLOCK_MAPPING;
-  int m_GLOB_STORE_WIDTH;  // 27
+  int m_GLOB_STORE_WIDTH;  // 18+9=27
 
 #ifdef COMPILE_AS_PYMODULE
   bool parse(PyObject* args){
@@ -111,6 +111,7 @@ std::ostream& operator<<(std::ostream& os, MatmulParams arg){
   os << "- m_dtypeA : " << tools::KcgDtypeToStr(arg.m_dtypeA) << std::endl;
   os << "- m_dtypeB : " << tools::KcgDtypeToStr(arg.m_dtypeB) << std::endl;
   os << "- m_dtypeC : " << tools::KcgDtypeToStr(arg.m_dtypeC) << std::endl;
+  os << "- m_isATranspose : " <<arg.m_isATranspose << std::endl;
   os << "- m_BLOCK_SIZE_M : " <<arg.m_BLOCK_SIZE_M << std::endl;
   os << "- m_BLOCK_SIZE_N : " <<arg.m_BLOCK_SIZE_N << std::endl;
   os << "- m_BLOCK_SIZE_K : " <<arg.m_BLOCK_SIZE_K << std::endl;
@@ -122,7 +123,15 @@ std::ostream& operator<<(std::ostream& os, MatmulParams arg){
   os << "- m_BLOCK_LAYOUT_N : " <<arg.m_BLOCK_LAYOUT_N << std::endl;
   os << "- m_WARP_LAYOUT_M : " <<arg.m_WARP_LAYOUT_M << std::endl;
   os << "- m_WARP_LAYOUT_N : " <<arg.m_WARP_LAYOUT_N << std::endl;
-  os << "- m_isATranspose : " <<arg.m_isATranspose << std::endl;
+  os << "- m_GLOB_LOAD_WIDTH_A : " << arg.m_GLOB_LOAD_WIDTH_A << std::endl;
+  os << "- m_GLOB_LOAD_WIDTH_B : " << arg.m_GLOB_LOAD_WIDTH_B << std::endl;
+  os << "- m_WARP_SCATTER_WIDTH_A : " << arg.m_WARP_SCATTER_WIDTH_A << std::endl;
+  os << "- m_WARP_SCATTER_WIDTH_B : " << arg.m_WARP_SCATTER_WIDTH_B << std::endl;
+  os << "- m_THREAD_SCATTER_WIDTH_A : " << arg.m_THREAD_SCATTER_WIDTH_A << std::endl;
+  os << "- m_THREAD_SCATTER_WIDTH_B : " << arg.m_THREAD_SCATTER_WIDTH_B << std::endl;
+  os << "- m_LOCAL_SPLIT_U : " << arg.m_LOCAL_SPLIT_U << std::endl;
+  os << "- m_BLOCK_MAPPING : " << arg.m_BLOCK_MAPPING << std::endl;
+  os << "- m_GLOB_STORE_WIDTH : " << arg.m_GLOB_STORE_WIDTH << std::endl;
   return os;
 }
 
@@ -178,15 +187,15 @@ std::map<Config, KernelInfo> testConfigs(
     auto res1 = generator.optimize(kernel, config);
     std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
 #endif
-    // auto res2 = generator.lowering(kernel);
-    // std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
-    // std::string hsacoPath = generator.translate(kernel);
-    // std::cout << "==== translate res :" << "\n";
-    // std::cout << hsacoPath << "\n";
-    // info.m_hsacoPath = hsacoPath;
-    // info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();
-    // result[config] = info;
-    // std::cout << "==== kernel name : " << info.m_kernelName << "\n";
+    auto res2 = generator.lowering(kernel);
+    std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
+    std::string hsacoPath = generator.translate(kernel);
+    std::cout << "==== translate res :" << "\n";
+    std::cout << hsacoPath << "\n";
+    info.m_hsacoPath = hsacoPath;
+    info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();
+    result[config] = info;
+    std::cout << "==== kernel name : " << info.m_kernelName << "\n";
   }
   return result;
 }

@@ -36,7 +36,7 @@ bool KernelCodeGenerator::optimize(mlir::ModuleOp &mod, std::map<std::string, in
 bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::string& libsPath, const std::string& gfx_arch) {
 #define FLAG 1
   mlir::PassManager pm(&context);
-  pm.addPass(createAddDebugLogPass());
+  // pm.addPass(createAddDebugLogPass());
   pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
   pm.addPass(createExtractAffineParallelPass());  // affine.parallel 根据内外层，将loopIvs 替换为bid、tid
 #if FLAG

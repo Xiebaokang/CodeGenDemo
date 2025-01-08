@@ -237,6 +237,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto tempA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {glob_load_total_width_a}, elementA);
     auto smB = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_N"]}, elementB);
     auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
+    tools::_opSetDescription(smA.getDefiningOp(),"smA");
+    tools::_opSetDescription(smB.getDefiningOp(),"smB");
     LOG_DEBUG("===== before alloc_buffer =======\n",module);
 
     // Rewriter::parallelToOneDim(gridLevel);
@@ -287,6 +289,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       auto elementC = C.getType().dyn_cast<mlir::MemRefType>().getElementType();
       auto regC_ = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"] * config["THREAD_SIZE_N"]}, elementC);
       auto smC = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_M"], config["BLOCK_SIZE_N"]}, elementC);
+      tools::_opSetDescription(smC.getDefiningOp(),"smC");
       auto cacheWriteShCMap = getAffineMap("cacheWriteShC", builder, config);
       Rewriter::cache_write(m_inner_0, C, smC, cacheWriteShCMap, 
                             {threadIdx[0], m_inner_0.getInductionVar(),m_inner_1.getInductionVar(), m_inner_2.getInductionVar(), 

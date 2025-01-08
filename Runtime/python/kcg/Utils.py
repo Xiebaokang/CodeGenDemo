@@ -294,7 +294,16 @@ class KernelArgMatmul :
         self.M : int = m
         self.N : int = n
         self.K : int = k
-        self.isATranspose : int = 0
+        self.isATranspose : int = 1
+        self.GLOB_LOAD_WIDTH_A : int = 0
+        self.GLOB_LOAD_WIDTH_B : int = 0
+        self.WARP_SCATTER_WIDTH_A : int = 0
+        self.WARP_SCATTER_WIDTH_B : int = 0
+        self.THREAD_SCATTER_WIDTH_A : int = 0
+        self.THREAD_SCATTER_WIDTH_B : int = 0
+        self.LOCAL_SPLIT_U : int = 0
+        self.BLOCK_MAPPING : int = 0
+        self.GLOB_STORE_WIDTH : int = 0
         
     def check(self) :
         # problem size check
@@ -309,6 +318,7 @@ class KernelArgMatmul :
         assert self.WARP_LAYOUT_N * self.WARP_LAYOUT_M == self.WARP_SIZE
         # shm size check
         assert 2*(self.BLOCK_SIZE_M + self.BLOCK_SIZE_N) * self.BLOCK_SIZE_K <= 65536
+        
         print("===== config check ok!")
     
     def dtype(self,index:str)->EnumKernelDType :
@@ -327,3 +337,19 @@ class KernelArgMatmul :
         if index=='C':
             return ToTorchType(self.__dataType_C)
     
+
+class KernelArgMMGenerator :
+    def __init__(self,platWarpSize,
+                 m:int ,n:int, k:int, 
+                 typeA : EnumKernelDType, typeB : EnumKernelDType, typeC : EnumKernelDType):
+        self.M : int = m
+        self.N : int = n
+        self.K : int = k
+        self.dtypeA = typeA
+        self.dtypeB = typeB
+        self.dtypeC = typeC
+        self.WARP_SIZE = platWarpSize
+    
+    def generate(self) -> KernelArgMatmul :
+        
+        pass
