@@ -19,6 +19,26 @@ struct Optimizer {
   std::string name;
 };
 
+struct MatmulConfigUtils{
+  explicit MatmulConfigUtils(const std::map<std::string,int>& config);
+  int BM ;
+  int BN ;
+  int BK ;
+  int TM ;
+  int TN ;
+  int BLOCK_Y;  // blockDimY
+  int BLOCK_X;  // blockDimX
+  int THREAD_NUM;  // block 内的线程数
+  int SHARED_SIZE_A;  // shm size
+  int SHARED_SIZE_B;
+  int GLOB_LOAD_ROW_WIDTH_A;
+  int GLOB_LOAD_ROW_WIDTH_B;
+  int BLOCK_REPEAT_A;  // 离散化时，warp处理区域的分散次数
+  int WARP_REPEAT_A;  // 离散化时，thread处理区域的分散次数
+  int BLOCK_REPEAT_B;
+  int WARP_REPEAT_B;
+  int GLOB_STORE_ROW_WIDTH;
+};
 
 struct MatmulOptimizer : Optimizer {
 
@@ -59,6 +79,8 @@ struct MatmulOptimizer : Optimizer {
   std::map<mlir::func::FuncOp, MemoryBuffer, CompareFunc> matmulBuffers;
   
 };
+
+
 
 }  // KernelCodeGen
 

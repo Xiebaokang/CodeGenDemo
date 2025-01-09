@@ -96,6 +96,50 @@ void _opSetDescription(mlir::Operation* op, const std::string& attrValue){
   op->setAttr(AttrDescription, b.getStringAttr(attrValue));
 }
 
+namespace mapUtils {
+  
+mlir::AffineExpr waprId(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return tid.floorDiv(config.at(KEY_WARP_SIZE));
+}
+
+mlir::AffineExpr waprId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return waprId(tid,config) % config.at(KEY_BLOCK_LAYOUT_N);
+}
+
+mlir::AffineExpr waprId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return waprId(tid,config).floorDiv(config.at(KEY_BLOCK_LAYOUT_N));
+}
+
+mlir::AffineExpr laneId(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return tid % (config.at(KEY_WARP_SIZE));
+}
+
+mlir::AffineExpr laneId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return laneId(tid,config) % config.at(KEY_WARP_LAYOUT_N);
+}
+
+mlir::AffineExpr laneId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+  return laneId(tid,config).floorDiv(config.at(KEY_WARP_LAYOUT_N));
+}
+
+mlir::AffineExpr bid_y(mlir::AffineExpr bid, const std::map<std::string, int>& config){
+  return bid.floorDiv(config.at(KEY_N) / config.at(KEY_BLOCK_SIZE_N));
+}
+
+mlir::AffineExpr bid_x(mlir::AffineExpr bid, const std::map<std::string, int>& config){
+  return bid % (config.at(KEY_N) / config.at(KEY_BLOCK_SIZE_N));
+}
+
+mlir::AffineExpr bid(mlir::AffineExpr bx,mlir::AffineExpr by, const std::map<std::string, int>& config){
+  return bx + by * (config.at(KEY_N) / config.at(KEY_BLOCK_SIZE_N));
+}
+
+mlir::AffineExpr tid(mlir::AffineExpr tx,mlir::AffineExpr ty, const std::map<std::string, int>& config){
+  return tx + ty * (config.at(KEY_BLOCK_SIZE_N) / config.at(KEY_THREAD_SIZE_N));
+}
+
+}  // mapUtils
+
 
 }  // namespace tools
 }  // namespace KernelCodeGen

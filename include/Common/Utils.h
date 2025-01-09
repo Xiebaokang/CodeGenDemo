@@ -216,6 +216,22 @@ namespace tools {
   /* ******** for debug use *************** */
   void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
 
+namespace mapUtils {
+  
+  // map utils functions
+  mlir::AffineExpr waprId(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr waprId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr waprId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr laneId(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr laneId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr laneId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config);
+  mlir::AffineExpr bid_y(mlir::AffineExpr bid, const std::map<std::string, int>& config);
+  mlir::AffineExpr bid_x(mlir::AffineExpr bid, const std::map<std::string, int>& config);
+  mlir::AffineExpr bid(mlir::AffineExpr bx,mlir::AffineExpr by, const std::map<std::string, int>& config);
+  mlir::AffineExpr tid(mlir::AffineExpr tx,mlir::AffineExpr ty, const std::map<std::string, int>& config);
+
+}
+
 }
 
 }  // KernelCodeGen
