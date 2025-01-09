@@ -139,4 +139,23 @@ mlir::affine::AffineForOp shiftBufferDatas(mlir::OpBuilder builder, mlir::Value 
 
 }
 
+template <typename AffineMemoryOp>
+mlir::AffineMap getOneDimMap(AffineMemoryOp memOp, int64_t offset) {
+  // [d0, d1, d2] -> offset + d0 * (shape[1] * shape[2]) + d1 * (shape[2]) + d2
+  mlir::OpBuilder builder(memOp);
+  auto exprs = memOp.getAffineMap().getResults();
+  auto buf = memOp.getMemref();
+  auto bufShape = buf.getType().getShape();
+
+  mlir::AffineExpr oneDimExpr = builder.getAffineConstantExpr(offset);
+  for (int i=0; i<exprs.size(); i++) {
+    int64_t stride = 1;
+    for (int j=i+1; j<exprs.size(); j++) { 
+      stride *= bufShape[j];
+    }
+    oneDimExpr = oneDimExpr + exprs[i] * stride;
+  }
+  return mlir::AffineMap::get(memOp.getMapOperands().size(), 0, llvm::ArrayRef<mlir::AffineExpr>({oneDimExpr}), builder.getContext());
+}
+
 #endif

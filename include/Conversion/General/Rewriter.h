@@ -17,16 +17,15 @@ mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &hasIterLoop, std::v
 
 void reorder(const std::vector<mlir::affine::AffineForOp> &forOp);
 
-mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp> &forOp);
+// mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp> &forOp);
+mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp>& forOps);
 
 void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp &parallelOp);
 
-void parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp);
+llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp);
 
 template <typename ParentOpType>
-mlir::Value alloc_buffer(
-  ParentOpType father, MemorySpace ms, const std::vector<int64_t> shape_, mlir::Type dtype)
-{
+mlir::Value alloc_buffer(ParentOpType father, MemorySpace ms, const std::vector<int64_t> shape_, mlir::Type dtype) {
   llvm::ArrayRef<int64_t> shape(shape_);
   int64_t flatSize = 1;
   for (auto dim : shape){
@@ -57,9 +56,7 @@ mlir::Value alloc_buffer(
 mlir::Value _inner_alloc_buffer(mlir::OpBuilder &builder, mlir::MemRefType &type);
 
 template <typename ContextOp>
-mlir::Value alloc_buffer(ContextOp contextOp, Position pos, MemorySpace ms,
-                          const std::vector<int64_t> shape_, mlir::Type dtype)
-{
+mlir::Value alloc_buffer(ContextOp contextOp, Position pos, MemorySpace ms, const std::vector<int64_t> shape_, mlir::Type dtype) {
   llvm::ArrayRef<int64_t> shape(shape_);
   mlir::MemRefType tensorShape = mlir::MemRefType::get(
       shape, dtype, {}, static_cast<int>(ms));
@@ -104,6 +101,10 @@ mlir::affine::AffineForOp splitUReduce(mlir::Value src, mlir::Value dst, mlir::A
 
 mlir::affine::AffineForOp splitUWrite(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);
+
+mlir::Value bufferCombine(std::vector<std::vector<mlir::Value>> buffers);
+
+void BlockMapping(mlir::affine::AffineParallelOp gridLevel, int64_t groupWidth, bool isCol=true);
 
 void cache_read(mlir::affine::AffineForOp scope, 
     mlir::Value src, mlir::Value cached, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands);

@@ -239,7 +239,6 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
     LOG_DEBUG("===== before alloc_buffer =======\n",module);
 
-    // Rewriter::parallelToOneDim(gridLevel);
     Rewriter::parallelToOneDim(blockLevel);
     LOG_DEBUG("===== before parallelToOneDim =======\n",module);
     
@@ -302,6 +301,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       auto StoreBarrier = Rewriter::barrier(m_inner_0, Position::after);
       LOG_DEBUG("===== load write to C =======\n",module);
 
+      Rewriter::bufferCombine({{smA, smB}, {smC}});
+      Rewriter::bufferCombine({{regC}, {regC_}});
+      LOG_DEBUG("===== bufferCombine =======\n",module);
+
     } else {
       auto cacheWriteCMap = getAffineMap("cacheWriteC", builder, config);
       Rewriter::cache_write(m_inner_0, C, C, cacheWriteCMap, 
@@ -313,6 +316,9 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     Rewriter::vectorize(n_inner_2, config["THREAD_SCATTER_WIDTH_B"]);
     LOG_DEBUG("===== vectorize =======\n",module);
+
+    Rewriter::BlockMapping(gridLevel, config["BLOCK_MAPPING"]);
+    LOG_DEBUG("===== BlockMapping gridLevel =======\n",module);
     
     // module.dump();
     mlir::PassManager pm { module.getContext() };
@@ -321,6 +327,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     pm.addPass(mlir::createCanonicalizerPass());
     pm.run(module);
     LOG_DEBUG("===== after DCE =======\n",module);
+
+    
 
     // auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
     // auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
@@ -363,16 +371,16 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // });
     // // module.dump();
 
-    // Rewriter::unrollAttribute(module, [&](mlir::affine::AffineForOp forOp)->bool {
-    //   if (!forOp.hasConstantBounds()) return false;
-    //   auto step = forOp.getStep().getLimitedValue();
-    //   auto ub = forOp.getConstantUpperBound();
-    //   auto lb = forOp.getConstantLowerBound();
-    //   auto times = (ub - lb) / step;
-    //   if (times > threshold) return false;
-    //   return true;
-    // });
-    // LOG_DEBUG("===== after applyOptimizer =======\n",module);
+    Rewriter::unrollAttribute(module, [&](mlir::affine::AffineForOp forOp)->bool {
+      if (!forOp.hasConstantBounds()) return false;
+      auto step = forOp.getStep().getLimitedValue();
+      auto ub = forOp.getConstantUpperBound();
+      auto lb = forOp.getConstantLowerBound();
+      auto times = (ub - lb) / step;
+      if (times > 16) return false;
+      return true;
+    });
+    LOG_DEBUG("===== unrollAttribute =======\n",module);
   }
 }
 
