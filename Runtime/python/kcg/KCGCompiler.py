@@ -23,6 +23,17 @@ class KCGCompiler :
             param.BLOCK_LAYOUT_N,
             param.WARP_LAYOUT_M,
             param.WARP_LAYOUT_N,
+            
+            param.GLOB_LOAD_WIDTH_A,
+            param.GLOB_LOAD_WIDTH_B,
+            param.WARP_SCATTER_WIDTH_A,
+            param.WARP_SCATTER_WIDTH_B,
+            param.THREAD_SCATTER_WIDTH_A,
+            param.THREAD_SCATTER_WIDTH_B,
+            param.LOCAL_SPLIT_U,
+            param.BLOCK_MAPPING,
+            param.GLOB_STORE_WIDTH,
+            
             param.dtype('A'),
             param.dtype('B'),
             param.dtype('C'),

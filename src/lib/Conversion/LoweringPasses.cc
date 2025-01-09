@@ -99,7 +99,7 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
       blockIdOps.push_back(bid);
     }
     for(int i=0;i<innerParallel.getNumDims();++i){
-      auto tid = builder.create<mlir::gpu::ThreadIdOp>(builder.getUnknownLoc(),dims[i]);
+      auto tid = builder.create<mlir::gpu::ThreadIdOp>(builder.getUnknownLoc(), gpu::Dimension::x);
       threadIdOps.push_back(tid);
     }
     auto argCnt = innerParallel.getBody()->getArguments().size();
@@ -843,25 +843,39 @@ struct CombineMemrefPass : public PassWrapper<CombineMemrefPass, OperationPass<M
   
   template<typename AllocOrAllocaOp>
   void combineAllocOrAllocaOp(func::FuncOp &funcOp) {
-    int64_t memSize = 0;
+    int64_t memSizeAB = 0;
+    int64_t memSizeC = 0;
     llvm::DenseMap<AllocOrAllocaOp, int64_t> indexMap;
     AllocOrAllocaOp firstOp = nullptr;
     MemRefType type;
     // 记录 allocop的mem尺寸起始位置
     funcOp.walk<WalkOrder::PreOrder>([&](AllocOrAllocaOp allocOp) {
-      if (memSize == 0) firstOp = allocOp;
-      indexMap.try_emplace(allocOp, memSize);
-      type = mlir::dyn_cast<MemRefType>(allocOp.getResult().getType());
-      int64_t temp = 1;
-      for (auto shape : type.getShape()) {
-        temp *= shape;
+      if(tools::isOpAttrEqualToString(allocOp,AttrDescription,"smC")){
+        type = mlir::dyn_cast<MemRefType>(allocOp.getResult().getType());
+        int64_t temp = 1;
+        for (auto shape : type.getShape()) {
+          temp *= shape;
+        }
+        indexMap.try_emplace(allocOp, memSizeC);
+        memSizeC = temp;
       }
-      memSize += temp;
+      else{
+        if (memSizeAB == 0) {
+          firstOp = allocOp;
+        }
+        indexMap.try_emplace(allocOp, memSizeAB);
+        type = mlir::dyn_cast<MemRefType>(allocOp.getResult().getType());
+        int64_t temp = 1;
+        for (auto shape : type.getShape()) {
+          temp *= shape;
+        }
+        memSizeAB += temp;
+      }
     });
-    if (!memSize) return;
-
+    if (!memSizeAB){ return; }
+    memSizeAB = memSizeC > memSizeAB ? memSizeC : memSizeAB;
     OpBuilder b(firstOp);
-    auto newType = MemRefType::get({memSize}, type.getElementType(), {}, type.getMemorySpaceAsInt());
+    auto newType = MemRefType::get({memSizeAB}, type.getElementType(), {}, type.getMemorySpaceAsInt());
     auto newAllocOp = b.create<AllocOrAllocaOp>(firstOp.getLoc(), newType);
     newAllocOp.setAlignment(KCG_ALIGNBYTE);
     for (const auto& pair : indexMap) {
@@ -938,7 +952,9 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
       }
       expr = expr + oldExprs[i] * num;
     }
-    expr = startIndex + expr;
+    if(startIndex != 0){
+      expr = startIndex + expr;
+    }
     auto map = AffineMap::get(oldAffineMap.getNumDims(), oldAffineMap.getNumSymbols(), llvm::ArrayRef<mlir::AffineExpr>({expr}), context);
     return map;
   }
@@ -959,7 +975,6 @@ struct FlattenMemrefPass : public PassWrapper<FlattenMemrefPass, OperationPass<M
       for (auto user : result.getUsers()) {  // collect users
         users.push_back(user);
       }
-
       auto b = mlir::OpBuilder(oldOp);
       auto newType = MemRefType::get({len}, resType.getElementType(), {}, resType.getMemorySpaceAsInt());
       auto newAllocOp = b.create<AllocOrAllocaOp>(oldOp.getLoc(), newType);
