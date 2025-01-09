@@ -36,6 +36,131 @@ bool MatmulOptimizer::applicable(mlir::ModuleOp& module) {
   return true;
 }
 
+mlir::AffineMap MatmulOptimizer::affineMap_loadtileA(mlir::OpBuilder& builder, const std::map<std::string, int>& config)
+{
+  int dimCount = 0;
+  auto dim_k = builder.getAffineDimExpr(dimCount++);
+  auto dim_by = builder.getAffineDimExpr(dimCount++);
+  auto dim_iter = builder.getAffineDimExpr(dimCount++);
+  auto dim_tid = builder.getAffineDimExpr(dimCount++);
+  
+  const int& BM = config.at(KEY_BLOCK_SIZE_M); 
+  const int& BN = config.at(KEY_BLOCK_SIZE_N); 
+  const int& BK = config.at(KEY_BLOCK_SIZE_K);
+  const int& TM = config.at(KEY_THREAD_SIZE_M);
+  const int& TN = config.at(KEY_THREAD_SIZE_N);
+  const int BLOCK_Y = BM / TM;
+  const int BLOCK_X = BN / TN;
+  const int THREAD_NUM = BLOCK_X * BLOCK_Y * config.at(KEY_LOCAL_SPLIT_U);
+  const int SHARED_SIZE_A = BM * BK;
+  const int SHARED_SIZE_B = BN * BK;
+  // glob -> reg -> shared 
+  const int GLOB_LOAD_ROW_WIDTH_A = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_A);
+  const int GLOB_LOAD_ROW_WIDTH_B = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_B);
+  // shared -> reg
+  const int BLOCK_REPEAT_A = TM / config.at(KEY_WARP_SCATTER_WIDTH_A);
+  const int WARP_REPEAT_A = config.at(KEY_WARP_SCATTER_WIDTH_A) / config.at(KEY_THREAD_SCATTER_WIDTH_A);
+  const int BLOCK_REPEAT_B = TN / config.at(KEY_WARP_SCATTER_WIDTH_B);
+  const int WARP_REPEAT_B = config.at(KEY_WARP_SCATTER_WIDTH_B) / config.at(KEY_THREAD_SCATTER_WIDTH_B);
+  // reduce C (sharedC to regC)
+  const int GLOB_STORE_ROW_WIDTH = THREAD_NUM / BM * config.at(KEY_GLOB_STORE_WIDTH);
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+    // ***** load glob to temp reg *****
+  auto sh_load_row = dim_tid.floorDiv((THREAD_NUM / BK));
+  auto sh_load_col = dim_tid % (THREAD_NUM / BK);
+
+  // A[sh_load_row + k][(by * BM) + (iter * GLOB_LOAD_ROW_WIDTH_A) + (sh_load_col * GLOB_LOAD_WIDTH_A)]
+  exprs.push_back(sh_load_row + dim_k);
+  exprs.push_back(dim_by * BM + dim_iter * GLOB_LOAD_ROW_WIDTH_A + sh_load_col * config.at(KEY_GLOB_LOAD_WIDTH_A));
+ 
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+
+}
+
+mlir::AffineMap MatmulOptimizer::affineMap_loadtileB(mlir::OpBuilder& builder, const std::map<std::string, int>& config)
+{
+  int dimCount = 0;
+  auto dim_k = builder.getAffineDimExpr(dimCount++);
+  auto dim_bx = builder.getAffineDimExpr(dimCount++);
+  auto dim_iter = builder.getAffineDimExpr(dimCount++);
+  auto dim_tid = builder.getAffineDimExpr(dimCount++);
+  
+  const int& BM = config.at(KEY_BLOCK_SIZE_M); 
+  const int& BN = config.at(KEY_BLOCK_SIZE_N); 
+  const int& BK = config.at(KEY_BLOCK_SIZE_K);
+  const int& TM = config.at(KEY_THREAD_SIZE_M);
+  const int& TN = config.at(KEY_THREAD_SIZE_N);
+  const int BLOCK_Y = BM / TM;
+  const int BLOCK_X = BN / TN;
+  const int THREAD_NUM = BLOCK_X * BLOCK_Y * config.at(KEY_LOCAL_SPLIT_U);
+  const int SHARED_SIZE_A = BM * BK;
+  const int SHARED_SIZE_B = BN * BK;
+  // glob -> reg -> shared 
+  const int GLOB_LOAD_ROW_WIDTH_A = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_A);
+  const int GLOB_LOAD_ROW_WIDTH_B = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_B);
+  // shared -> reg
+  const int BLOCK_REPEAT_A = TM / config.at(KEY_WARP_SCATTER_WIDTH_A);
+  const int WARP_REPEAT_A = config.at(KEY_WARP_SCATTER_WIDTH_A) / config.at(KEY_THREAD_SCATTER_WIDTH_A);
+  const int BLOCK_REPEAT_B = TN / config.at(KEY_WARP_SCATTER_WIDTH_B);
+  const int WARP_REPEAT_B = config.at(KEY_WARP_SCATTER_WIDTH_B) / config.at(KEY_THREAD_SCATTER_WIDTH_B);
+  // reduce C (sharedC to regC)
+  const int GLOB_STORE_ROW_WIDTH = THREAD_NUM / BM * config.at(KEY_GLOB_STORE_WIDTH);
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+      // ***** load glob to temp reg *****
+  auto sh_load_row = dim_tid.floorDiv((THREAD_NUM / BK));
+  auto sh_load_col = dim_tid % (THREAD_NUM / BK);
+
+  // B[sh_load_row + k][(bx * BN) + (iter * GLOB_LOAD_ROW_WIDTH_B) + (sh_load_col * GLOB_LOAD_WIDTH_B)]
+  exprs.push_back(sh_load_row + dim_k);
+  exprs.push_back(dim_bx * BN + dim_iter * GLOB_LOAD_ROW_WIDTH_B + sh_load_col * config.at(KEY_GLOB_LOAD_WIDTH_B));
+
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
+}
+
+mlir::AffineMap MatmulOptimizer::affineMap_storetileA(mlir::OpBuilder& builder, const std::map<std::string, int>& config)
+{
+  int dimCount = 0;
+  auto dim_tid = builder.getAffineDimExpr(dimCount++);
+  auto dim_iter = builder.getAffineDimExpr(dimCount++);
+  
+  const int& BM = config.at(KEY_BLOCK_SIZE_M); 
+  const int& BN = config.at(KEY_BLOCK_SIZE_N); 
+  const int& BK = config.at(KEY_BLOCK_SIZE_K);
+  const int& TM = config.at(KEY_THREAD_SIZE_M);
+  const int& TN = config.at(KEY_THREAD_SIZE_N);
+  const int BLOCK_Y = BM / TM;
+  const int BLOCK_X = BN / TN;
+  const int THREAD_NUM = BLOCK_X * BLOCK_Y * config.at(KEY_LOCAL_SPLIT_U);
+  const int SHARED_SIZE_A = BM * BK;
+  const int SHARED_SIZE_B = BN * BK;
+  // glob -> reg -> shared 
+  const int GLOB_LOAD_ROW_WIDTH_A = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_A);
+  const int GLOB_LOAD_ROW_WIDTH_B = THREAD_NUM / BK * config.at(KEY_GLOB_LOAD_WIDTH_B);
+  // shared -> reg
+  const int BLOCK_REPEAT_A = TM / config.at(KEY_WARP_SCATTER_WIDTH_A);
+  const int WARP_REPEAT_A = config.at(KEY_WARP_SCATTER_WIDTH_A) / config.at(KEY_THREAD_SCATTER_WIDTH_A);
+  const int BLOCK_REPEAT_B = TN / config.at(KEY_WARP_SCATTER_WIDTH_B);
+  const int WARP_REPEAT_B = config.at(KEY_WARP_SCATTER_WIDTH_B) / config.at(KEY_THREAD_SCATTER_WIDTH_B);
+  // reduce C (sharedC to regC)
+  const int GLOB_STORE_ROW_WIDTH = THREAD_NUM / BM * config.at(KEY_GLOB_STORE_WIDTH);
+
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+    // ***** load temp reg to shared *****
+  auto sh_load_row = dim_tid.floorDiv((THREAD_NUM / BK));
+  auto sh_load_col = dim_tid % (THREAD_NUM / BK);
+    // sh_A[sh_load_row][(iter * GLOB_LOAD_ROW_WIDTH_A) + (sh_load_col * GLOB_LOAD_WIDTH_A)]
+  exprs.push_back(sh_load_row);
+  exprs.push_back(dim_iter * GLOB_LOAD_ROW_WIDTH_A + sh_load_col * config.at(KEY_GLOB_LOAD_WIDTH_A));
+  
+  return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext()); 
+
+}
+mlir::AffineMap MatmulOptimizer::affineMap_storetileB(mlir::OpBuilder& builder, const std::map<std::string, int>& config)
+{
+  // todo
+}
 
 mlir::AffineMap MatmulOptimizer::getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config) {
   auto dim0 = builder.getAffineDimExpr(0);

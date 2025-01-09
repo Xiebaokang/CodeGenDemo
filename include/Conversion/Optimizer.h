@@ -30,6 +30,10 @@ struct MatmulOptimizer : Optimizer {
   virtual void applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) override;
 
   mlir::AffineMap getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config);
+  mlir::AffineMap affineMap_loadtileA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap affineMap_loadtileB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap affineMap_storetileA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap affineMap_storetileB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
 
   void clear() {
     matmuls.clear();
