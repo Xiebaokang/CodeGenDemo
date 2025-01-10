@@ -996,23 +996,38 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
   std::vector<std::vector<mlir::affine::AffineForOp>> results;
 
   /* step1: double buffer.*/
-
+  // 获取 buffer 的类型，并尝试转为 mlir::MemRefType。
   auto bufferType = buffer.getType().dyn_cast<mlir::MemRefType>();
+  // 创建一个小向量 shape 来保存新缓冲区的形状。
   mlir::SmallVector<int64_t> shape;
   /// double size on top dim.
+  // 先插入一个 2，意味着我们在最高维度多插入了一维，大小为 2，用于实现双缓冲。
   shape.push_back(2);
+  // 遍历原有的 bufferType 的维度，并将其依次推入 shape，让新缓冲区的其余维度和原来的保持一致。
   for (auto dim : bufferType.getShape()) {
     shape.push_back(dim);
   }
+  // 基于新的 shape 和原先相同的元素类型（ElementType）、地址空间（MemorySpace）等，创建一个新的 MemRefType，这就是我们的「双缓冲」类型。
   auto newBufferType = mlir::MemRefType::get(
     shape, bufferType.getElementType(), {}, bufferType.getMemorySpaceAsInt());
+  // 用于保存如果是 alloca 的结果。
   mlir::memref::AllocaOp allocRegistOp;
+  // 用于保存 alloc 的结果
   mlir::memref::AllocOp allocOp;
+  // isAllocRegist 用于标识到底是 alloca 还是 alloc
   bool isAllocRegist = false;
+  // defineBufferOp 用来记录原始的 buffer 定义操作
   mlir::Operation* defineBufferOp = nullptr;
   // mlir::OpBuilder* builder = nullptr;
+  // builder 是一个 OpBuilder 的智能指针，用来在 IR 中插入新的操作
   std::shared_ptr<mlir::OpBuilder> builder = nullptr;
 
+  /*
+  这里分三种情况处理 buffer 的定义操作：
+  如果 buffer 来自 memref.alloc，就用 OpBuilder 再创建一个同样的 allocOp，但类型是 newBufferType（即带有双缓冲维度的类型）。
+  如果 buffer 来自 memref.alloca，就用 OpBuilder 创建一个 AllocaOp 来分配一个更大的栈上缓冲区，并设置对齐方式。这里设置了 KCG_ALIGNBYTE。
+  否则就打印一下操作名，说明并不支持或没有匹配到，代表报错。
+  */
   if(mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp()) != nullptr){
     defineBufferOp = mlir::dyn_cast<mlir::memref::AllocOp>(buffer.getDefiningOp());
     // mlir::OpBuilder builder(defineBufferOp);
@@ -1030,8 +1045,14 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
     llvm::outs() << "[D] OpName = "<< buffer.getDefiningOp()->getName().getStringRef();
     llvm::outs().flush();
   }
+  // 确保 builder 不为空，否则报错
   assert(builder != nullptr && "PipeLineNullptrError");
   // auto doubleBuffer = allocOp.getResult();
+  /*
+  根据前面判断出来的 isAllocRegist 标识，来获取最终的双缓冲 Value：
+  如果是 alloca，则从 allocRegistOp 拿结果；
+  否则就从 allocOp 拿结果。
+  */
   mlir::TypedValue<mlir::MemRefType> doubleBuffer;
   if(isAllocRegist){
     doubleBuffer = allocRegistOp.getResult();
@@ -1043,7 +1064,9 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
 
   /* step2: prefetch before the loop.*/
   //1. replace every use of compute_at's inductionvar with compute_at'lb.
+  // 用来遍历 AffineForOp body 内部所有的 AffineVectorLoadOp 和 AffineVectorStoreOp，如果它们的索引用到了 src，就替换成 dst
   auto replaceOperand = [&](mlir::affine::AffineForOp body, mlir::Value src, mlir::Value dst) {
+    // 处理 load
     body.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineVectorLoadOp load) {
       auto oldOperands = load.getMapOperands();
       mlir::SmallVector<mlir::Value> operands;
@@ -1062,6 +1085,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
       load.getResult().replaceAllUsesWith(newVectorLoadOp.getResult());
       load.erase();
     });
+    // 处理 store
     body.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineVectorStoreOp store) {
       auto oldOperands = store.getMapOperands();
       mlir::SmallVector<mlir::Value> operands;
@@ -1081,6 +1105,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
     });
   };
   //2. replace every reference to buffer with doubleBuffer, and select doubleBuffer[0];
+  // 用于将对 bufferSrc 的访问替换为对 bufferDst 的访问，并且在索引最前面加一个常量维度 0，来访问 doubleBuffer[0, ...]
   auto replaceBufferRef = [&](mlir::affine::AffineForOp body, mlir::Value bufferSrc, mlir::Value bufferDst) {
     body.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineVectorLoadOp load) {
       auto oldMemref = load.getMemref();
@@ -1114,11 +1139,23 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
       store.erase();
     });
   };
+  // 用来保存克隆出来的新循环。
   std::vector<mlir::affine::AffineForOp> result;
+  // 把 builder 的插入点设置到 compute_at 这个循环的地方
   builder->setInsertionPoint(compute_at);
+  // 创建一个 ConstantIndexOp，值是 compute_at 的下界，用来替代原先循环里对迭代变量的引用，使得克隆出来的循环在主循环开始之前就固定在下界处执行一次
   auto lbOp = builder->create<mlir::arith::ConstantIndexOp>(builder->getUnknownLoc(), compute_at.getConstantLowerBound());
+  // 找到 compute_at 所在的 最外层循环
   auto rootLoop = findRootLoop(compute_at);
+  // 把 lbOp 这个操作移动到 rootLoop 最开始的位置，保证这个常量在后续插入的操作之前就定义好。
   lbOp->moveBefore(&(rootLoop->getBlock()->getOperations().front()));
+  /*
+  1 用 builder->clone 拷贝一份新的循环 newBody。
+  2 把 newBody 转为 AffineForOp 类型 loopBody。
+  3 调用 replaceOperand：将所有对 compute_at.getInductionVar() 的引用替换为 lbOp.getResult()，即固定这个循环在“下界”位置。
+  4 调用 replaceBufferRef：将所有对原 buffer 的读写替换为 doubleBuffer[0]。
+  5 把新的 loopBody 放进 result。
+  */
   for (auto readBody : readBodys) {
     mlir::IRMapping mapper;
     auto newBody = builder->clone(*readBody, mapper);
@@ -1127,15 +1164,18 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
     replaceBufferRef(loopBody, buffer, doubleBuffer);
     result.push_back(loopBody);
   }
+  // 新生成的循环，以及原先的循环，都放进 results 中
   results.push_back(result);
   results.push_back(readBodys);
 
 
+  // 循环内部的预取
   /* step3: prefetch in the main loop*/
   //1. create the affine.if to check if we can prefetch
+  // 获取两个 AffineDimExpr，在后面构造 AffineMap 或 IntegerSet 时会用到
   auto dim0 = builder->getAffineDimExpr(0);
   auto dim1 = builder->getAffineDimExpr(1);
-
+  // 提取主循环的步长 step、上界 ub、下界 lb，方便后面做边界判断。
   int64_t step = compute_at.getStep().getLimitedValue();
   int64_t ub = compute_at.getConstantUpperBound();
   int64_t lb = compute_at.getConstantLowerBound();
@@ -1148,6 +1188,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
   // Bits to check whether a constraint is an equality or an inequality.
   ArrayRef<bool> eqFlags;
   */
+  // 构造一个整数集合（IntegerSet），表示 ub - 2*step - iv >= 0，即“如果当前迭代变量 + 2 * step 还没越过上界，那就可以预取下一批数据”
   llvm::SmallVector<mlir::AffineExpr> exprs;
   llvm::SmallVector<bool> eqFlags;
   // iv + 2 * step <= ub
@@ -1156,20 +1197,23 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
   eqFlags.push_back(false);
   auto cst = mlir::IntegerSet::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), llvm::ArrayRef<bool>(eqFlags));
 
+  // 把插入点放到 compute_at 主循环的开头
   builder->setInsertionPointToStart(compute_at.getBody());
+  // 创建一个 AffineIfOp，其条件是上面的 cst，并把 compute_at.getInductionVar() 当作它的实参（用于判断 iv + 2*step <= ub）
   auto ifOp = builder->create<mlir::affine::AffineIfOp>(builder->getUnknownLoc(), cst, mlir::ValueRange{compute_at.getInductionVar()}, 
-                                               /*withElseRegion=*/false);
-  
+                                               /*withElseRegion=*/false);// withElseRegion=false 表示只生成 then 块，没有 else 块
+  // 把插入点移动到 ifOp 的 then 块开头，后续创建操作就会插入到这个区域
   builder->setInsertionPointToStart(ifOp.getThenBlock());
 
+  // 拷贝一份 readBodys 并反转顺序，然后把每个 readBody 的操作节点 splice 到 ifOp 的 then 区块里。
   auto reverseReadBodys = readBodys;
   std::reverse(reverseReadBodys.begin(), reverseReadBodys.end());
-
   for (auto readBody : reverseReadBodys) {
     ifOp.getBody()->getOperations().splice(ifOp.getBody()->begin(),
                     readBody->getBlock()->getOperations(), mlir::Block::iterator(readBody));//only the readBody.
-  }
+  }// 
   // 2. replace 
+  // 如果索引中出现了 src，就把它替换为 dstExpr。常见做法是 (iv -> iv + step) 或类似变换
   auto replaceAffineExprInLoop = [&](mlir::affine::AffineForOp body, mlir::Value src, mlir::AffineExpr dstExpr, int dimCount) {
     body.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineVectorLoadOp load) {
       auto operands = load.getMapOperands();
@@ -1222,6 +1266,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
     });
   };
   // 3.replace every reference to buffer with doubleBuffer, and select doubleBuffer[0];
+  // 用于将所有对 bufferSrc 的读写替换为对 bufferDst（双缓冲）的访问，并且根据主循环迭代变量 iv 来决定是 [0] 还是 [1] 片
   auto replaceBufferRefInLoop = [&](mlir::affine::AffineForOp body, mlir::Value bufferSrc, mlir::Value bufferDst, mlir::affine::AffineForOp compute_at) {
     body.walk<mlir::WalkOrder::PreOrder>([&](mlir::affine::AffineVectorLoadOp load) {
       auto oldMemref = load.getMemref();
@@ -1293,24 +1338,33 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
       store.erase();
     });
   };
+  /*
+  对 readBodys 中每个循环：
+  1 调整循环里的访存索引，让它们在主循环内读取“下一批”（iv + step）。
+  2 替换对原 buffer 的引用，让它们改为写/读 doubleBuffer[(iv + 1) % 2]
+  */
   for (auto readBody : readBodys) {
     auto dim0 = builder->getAffineDimExpr(0);
     replaceAffineExprInLoop(readBody, compute_at.getInductionVar(), dim0 + compute_at.getStep().getLimitedValue(), 1);
     replaceBufferRefInLoop(readBody, buffer, doubleBuffer, compute_at);
   }
   //4. replace load
+  // 找到 buffer 的所有使用者，遍历检查是否是 AffineVectorLoadOp 或 AffineLoadOp; 根据 compute_at.getInductionVar() 把访问改为访问 doubleBuffer 的 [i % 2] 或 [ (i.floorDiv(step) ) % 2 ]
   auto users = buffer.getUsers();
   for (auto user : users) {
     // must be load Op
+    // 判断是否是一个 AffineVectorLoadOp（即向量加载操作）
     if (auto load = mlir::dyn_cast<mlir::affine::AffineVectorLoadOp>(user)) {
+      // 检查 load.getMemref() 是否就是我们的 buffer
       auto oldMemref = load.getMemref();
       if (oldMemref != buffer) assert(false);
 
       int targetDim = -1;
       int additionDim = 0;
       bool existInductionVar = false;
+      // 遍历 load.getMapOperands()（即加载操作使用的索引操作数），如果在其中找到 compute_at.getInductionVar()，则说明这次加载已经和主循环迭代变量关联
       for (auto operand : load.getMapOperands()) {
-        targetDim += 1;
+        targetDim += 1; // targetDim 记录“在哪个维度”上找到了迭代变量
         if (operand == compute_at.getInductionVar()) {
           existInductionVar = true;
           break;
@@ -1319,24 +1373,29 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
       // reference to double buffer must depend on the iteration var.
       llvm::SmallVector<mlir::Value> operands;
       for (auto operand : load.getMapOperands()) operands.push_back(operand);
+      // 如果原本没有迭代变量（existInductionVar == false），就把 compute_at.getInductionVar() 手动加进去，targetDim 和 additionDim 也随之各加 1, 保证“对双缓冲的访问一定包含主循环的迭代变量”，从而能在运行时根据 i % 2 来选 [0] 或 [1]
       if (!existInductionVar) {
         operands.push_back(compute_at.getInductionVar());
         targetDim += 1;
         additionDim += 1;
       }
       auto dim = mlir::getAffineDimExpr(targetDim, load->getContext());
+      // 构造一个新的表达式向量 exprs, 新增选择双缓冲哪一片
       mlir::SmallVector<mlir::AffineExpr> exprs;
       exprs.push_back(dim.floorDiv(compute_at.getStep().getLimitedValue()) % 2);
       auto oldAffineMap = load.getAffineMap();
       auto oldExprs = oldAffineMap.getResults();
+      // 家如旧的表达式作map第二维三维参数
       for (auto expr : oldExprs) exprs.push_back(expr);
+      // 调用 mlir::AffineMap::get(...) 创建一个新的 AffineMap，其中 dimCount 等于 oldAffineMap.getNumDims() + additionDim
       auto map = mlir::AffineMap::get(/*dimCount*/oldAffineMap.getNumDims() + additionDim, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), load->getContext());
 
+      // 创建新的AffineVectorLoadOp
       mlir::OpBuilder builder(load);
       auto newVectorLoadOp = builder.create<mlir::affine::AffineVectorLoadOp>(builder.getUnknownLoc(), load.getVectorType(), doubleBuffer, map, operands);
       load.getResult().replaceAllUsesWith(newVectorLoadOp.getResult());
       load.erase();
-    } else if (auto load = mlir::dyn_cast<mlir::affine::AffineLoadOp>(user)) {
+    } else if (auto load = mlir::dyn_cast<mlir::affine::AffineLoadOp>(user)) { //如果不是 AffineVectorLoadOp，则判断是不是 AffineLoadOp, 逻辑和上面相同
       auto oldMemref = load.getMemref();
       if (oldMemref != buffer) assert(false);
 
@@ -1376,7 +1435,9 @@ std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(std::vector<mlir::a
   }
 
   /* step4: clear work*/
+  // 删除原先那个 memref.alloc 或 memref.alloca 操作
   defineBufferOp->erase();
+  // 把外部传进来的 buffer 更新为新创建的双缓冲 doubleBuffer
   buffer = doubleBuffer;
 
   return results;
