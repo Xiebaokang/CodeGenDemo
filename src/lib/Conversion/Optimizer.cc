@@ -458,28 +458,47 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
                           });
 
     Rewriter::vectorize(n_inner_1, config["VECTORIZE_WIDTH"]);
+    LOG_DEBUG("===== cache_write =======\n",module);
     // module.dump();
     
     auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
     auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
     auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, fragB, k_inner);
     auto doubleLoadFragA = Rewriter::pipeline({loadFragA}, fragA, k_inner);
+    LOG_DEBUG("===== pipeline =======\n",module);
     // module.dump();
 
     Rewriter::detach_last_loop(k_inner);
-
+    LOG_DEBUG("===== detach_last_loop =======\n",module);
+    // gma->regmovea 放在 gmb->regmoveb 位置的before
     Rewriter::schedule(doubleLoadTileA[0][0], doubleLoadTileB[0][0], Position::before);
+    LOG_DEBUG("===== schedule_0 =======\n",module);
+    // regmovea->shma 放在 regmoveb->shmb 位置的before
     Rewriter::schedule(doubleLoadTileA[0][1], doubleLoadTileB[0][1], Position::before); 
+    LOG_DEBUG("===== schedule_1 =======\n",module);
+    // gpuBarrierPrefix->shma 放在 regmoveb->shmb 位置的after
     Rewriter::schedule(gpuBarrierPrefix, doubleLoadTileB[0][1], Position::after);
-    Rewriter::schedule(doubleLoadTileB[1][0], doubleLoadTileA[1][0], Position::after);
+    LOG_DEBUG("===== schedule_2 =======\n",module);
+    // gma->regmovea 放在 gmb->regmoveb 位置的before(小k循环内)
+    Rewriter::schedule(doubleLoadTileA[1][0], doubleLoadTileB[1][0], Position::before);
+    LOG_DEBUG("===== schedule_3 =======\n",module);
+    // regmovea->shma 放在 regmoveb->shmb 位置的before(小k循环内)
     Rewriter::schedule(doubleLoadTileA[1][1], doubleLoadTileB[1][1], Position::before);
-    Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
+    LOG_DEBUG("===== schedule_4 =======\n",module);
+    // gpuBarrierPrefix->shma 放在 regmoveb->shmb 位置的after(小k循环内)
+    // gpuBarrierSuffix.erase(); ppl0107_1
+    Rewriter::schedule(gpuBarrierSuffix, k_inner, Position::after); // ppl 0107_2
+    // Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
+    LOG_DEBUG("===== schedule_5 =======\n",module);
     auto ifOp = doubleLoadTileA[1][1]->getParentOp();
     Rewriter::schedule(ifOp, k_inner, Position::after); 
+    LOG_DEBUG("===== first schedule =======\n",module);
     Rewriter::extract_loop(doubleLoadFragA[0][0], k_outer, /*iteration*/0);
     Rewriter::extract_loop(doubleLoadFragB[0][0], k_outer, /*iteration*/0);
+    LOG_DEBUG("===== extract_loop =======\n",module);
     Rewriter::schedule(doubleLoadFragB[0][0], k_outer, Position::end);
     Rewriter::schedule(doubleLoadFragA[0][0], k_outer, Position::end);
+    LOG_DEBUG("===== second schedule =======\n",module);
     // module.dump();
 
     Rewriter::change_double_buffer(doubleLoadFragA[0][0], smA);
