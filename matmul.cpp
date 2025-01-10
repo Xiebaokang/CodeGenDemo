@@ -1630,7 +1630,7 @@ void verify(T *host, T *device, int M, int N) {
       int index = i * N + j;
       if (std::abs(host[index] - device[index]) >= 0.00001) {
         printf("error index: (y=%d, x=%d)\n", i, j);
-        printf("errer host: %.1f   error device: %.1f\n", device[index], device[index]);
+        printf("errer host: %.1f   error device: %.1f\n", host[index], device[index]);
         result = false;
         break;
       }

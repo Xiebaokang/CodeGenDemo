@@ -102,11 +102,11 @@ mlir::AffineExpr waprId(mlir::AffineExpr tid, const std::map<std::string, int>& 
   return tid.floorDiv(config.at(KEY_WARP_SIZE));
 }
 
-mlir::AffineExpr waprId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+mlir::AffineExpr wapr_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
   return waprId(tid,config) % config.at(KEY_BLOCK_LAYOUT_N);
 }
 
-mlir::AffineExpr waprId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+mlir::AffineExpr wapr_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
   return waprId(tid,config).floorDiv(config.at(KEY_BLOCK_LAYOUT_N));
 }
 
@@ -114,11 +114,11 @@ mlir::AffineExpr laneId(mlir::AffineExpr tid, const std::map<std::string, int>& 
   return tid % (config.at(KEY_WARP_SIZE));
 }
 
-mlir::AffineExpr laneId_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+mlir::AffineExpr lane_x(mlir::AffineExpr tid, const std::map<std::string, int>& config){
   return laneId(tid,config) % config.at(KEY_WARP_LAYOUT_N);
 }
 
-mlir::AffineExpr laneId_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
+mlir::AffineExpr lane_y(mlir::AffineExpr tid, const std::map<std::string, int>& config){
   return laneId(tid,config).floorDiv(config.at(KEY_WARP_LAYOUT_N));
 }
 
@@ -136,6 +136,17 @@ mlir::AffineExpr bid(mlir::AffineExpr bx,mlir::AffineExpr by, const std::map<std
 
 mlir::AffineExpr tid(mlir::AffineExpr tx,mlir::AffineExpr ty, const std::map<std::string, int>& config){
   return tx + ty * (config.at(KEY_BLOCK_SIZE_N) / config.at(KEY_THREAD_SIZE_N));
+}
+
+llvm::SmallVector<mlir::AffineExpr> reshapeBlock(mlir::AffineExpr tid, const std::vector<int> shape) {
+  llvm::SmallVector<mlir::AffineExpr> exprs;
+  for (int i=0; i<shape.size(); i++) {
+    int64_t stride = 1;
+    for (int j=i+1; j<shape.size(); j++ ) { stride *= shape[j]; }
+    exprs.push_back(tid.floorDiv(stride));
+    tid = tid % stride;
+  }
+  return exprs;
 }
 
 }  // mapUtils

@@ -155,8 +155,6 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
   }
 };
 
-
-
 // 将scf的parallelOp 转成Gpu的block/threadIdOp表示，func添加grid/block size作为属性
 struct SCFParallelToGPULowering : public OpRewritePattern<scf::ParallelOp> {
   using OpRewritePattern<scf::ParallelOp>::OpRewritePattern;
@@ -265,6 +263,80 @@ struct SCFParallelToGPULowering : public OpRewritePattern<scf::ParallelOp> {
   }
 };
 
+// 将affine的parallelOp 转成Gpu的block/threadIdOp表示，func添加grid/block size作为属性
+struct ParallelToGPULowering : public OpRewritePattern<affine::AffineParallelOp> {
+  using OpRewritePattern<affine::AffineParallelOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(affine::AffineParallelOp parallelOp, PatternRewriter &rewriter) const final {
+    constexpr gpu::Dimension dims[] = {gpu::Dimension::x, gpu::Dimension::y, gpu::Dimension::z};
+    bool isInner = true;
+    auto &ops = parallelOp.getBody()->getOperations();
+    for (Operation &op : ops) {
+      if (dyn_cast<affine::AffineParallelOp>(&op)) {
+        isInner = false;
+        break;
+      }
+    }
+
+    // 替换 parallelOp 为 gpu::BlockIdOp
+    std::vector<int32_t> ubs;
+    auto upperBounds = parallelOp.getUpperBoundsMap().getConstantResults();
+    SmallVector<Value, 3> ids;
+    for (unsigned i = 0; i < parallelOp.getNumDims(); ++i) {
+      if (isInner) {
+        auto threadId = rewriter.create<gpu::ThreadIdOp>(parallelOp.getLoc(), dims[i]);
+        ids.push_back(threadId);
+      } else {
+        auto blockId = rewriter.create<gpu::BlockIdOp>(parallelOp.getLoc(), dims[i]);
+        ids.push_back(blockId);
+      }
+      ubs.push_back(static_cast<int32_t>(upperBounds[i]));
+    }
+
+    // 将func设置block和thread的上界属性
+    func::FuncOp funcOp = nullptr;
+    Operation* parentOp = parallelOp->getParentOp();
+    while (parentOp) {
+      if (funcOp = mlir::dyn_cast<func::FuncOp>(parentOp)) { break; }
+      parentOp = parentOp->getParentOp();
+    }
+    if (funcOp == nullptr) {
+      llvm::errs() << "The ParentOp of scf::ParallelOp must is FuncOp!\n";
+      assert(false);
+    }
+    
+    auto attr = rewriter.getDenseI32ArrayAttr(llvm::ArrayRef<int32_t>(ubs));
+    if (isInner) {
+      funcOp->setAttr("func.block.dim", attr);
+    } else {
+      funcOp->setAttr("func.grid.dim", attr);
+    }
+    
+    // 替换使用循环变量的操作
+    auto ivs = parallelOp.getIVs();
+    for (unsigned i = 0; i < ivs.size(); ++i) {
+      ivs[i].replaceAllUsesWith(ids[i]);
+    }
+
+    // 内层操作移出内层 p  collect op
+    SmallVector<Operation *, 4> opsToMove;
+    for (Operation &op : parallelOp.getBody()->getOperations()) {
+      if (!dyn_cast<affine::AffineYieldOp>(op)) {
+        opsToMove.push_back(&op);
+      }
+    }
+    // 内层操作移出内层 p 
+    Operation *tempOp = ids.back().getDefiningOp();
+    for (Operation *op : opsToMove) {
+      op->moveAfter(tempOp);
+      tempOp = op;
+    }
+    rewriter.eraseOp(parallelOp);
+
+    return success();
+  }
+};
+
 // 将 GUP 的IdOp转成 rocdl的IdOp，读取func的attr加到新的IdOp上
 template <typename IdOp, typename XOp, typename YOp, typename ZOp>
 struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
@@ -334,10 +406,11 @@ struct ParallelToROCDLPass : public PassWrapper<ParallelToROCDLPass, OperationPa
     RewritePatternSet patterns(&getContext());
     LLVMConversionTarget target(getContext());
     LLVMTypeConverter typeConverter(&getContext());
-    target.addIllegalOp<gpu::BlockIdOp, gpu::ThreadIdOp>();
+    // target.addIllegalOp<gpu::BlockIdOp, gpu::ThreadIdOp>();
+    target.addIllegalOp<affine::AffineParallelOp>();
     target.addLegalDialect<ROCDL::ROCDLDialect, arith::ArithDialect>();
 
-    // patterns.add<SCFParallelToGPULowering>(&getContext());
+    patterns.add<ParallelToGPULowering>(&getContext());
     // mlir::populateGpuToROCDLConversionPatterns(typeConverter, patterns, gpu::amd::HIP);
     patterns.add<IdOpGPUToROCDLLowering<gpu::BlockIdOp, ROCDL::BlockIdXOp, 
                                        ROCDL::BlockIdYOp, ROCDL::BlockIdZOp>>(&getContext(), StringRef{"func.grid.dim"});

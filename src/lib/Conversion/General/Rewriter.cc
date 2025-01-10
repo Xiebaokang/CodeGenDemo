@@ -498,8 +498,8 @@ mlir::affine::AffineForOp write(mlir::Value src, mlir::Value dst, mlir::AffineMa
                                 std::vector<int64_t> widths, mlir::affine::AffineForOp compute_at, Position pos) {
   auto dimsNum = map.getNumDims();
   auto builder = getBuilder(compute_at, pos);
-  auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
-  int64_t totalWidth = dstType.getShape()[0];
+  auto srcType = src.getType().dyn_cast<mlir::MemRefType>();
+  int64_t totalWidth = srcType.getShape()[0];
 
   std::vector<int> times;
   mlir::AffineExpr expr = builder.getAffineConstantExpr(0);

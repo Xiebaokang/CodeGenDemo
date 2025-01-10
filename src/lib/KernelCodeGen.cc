@@ -38,16 +38,17 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
   mlir::PassManager pm(&context);
   // pm.addPass(createAddDebugLogPass());
   pm.addPass(createAddExternalLibPass(libsPath, gfx_arch));      // 给mlir module添加lib属性
-  pm.addPass(createExtractAffineParallelPass());  // affine.parallel 根据内外层，将loopIvs 替换为bid、tid
+  // pm.addPass(createExtractAffineParallelPass());  // affine.parallel 根据内外层，将loopIvs 替换为bid、tid
+  pm.addPass(createParallelToROCDLPass());                         // 自定义 affine parallelOp -> gpu block/threadidx -> rocdl.workitem/workgroup.id.x/y
 #if FLAG
   pm.addPass(createCombineMemrefPass());
   // pm.addPass(createFlattenMemrefPass());
 #endif
   pm.addPass(ReplaceAllocToGetglobalPass());
 #if FLAG
-  pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
+  // pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
 #endif
-  pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());   // 循环不变量移动
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());  // 加入后会导致shm conflict 增加
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createCSEPass());
@@ -75,7 +76,6 @@ bool firstLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
 bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   mlir::PassManager pm(&context);
-  pm.addPass(createParallelToROCDLPass());                         // 自定义 gpu.parallelOp -> rocdl.workitem/workgroup.id.x/y
   // pm.addPass(createROCDLIdOpModifyPass());                      // 自定义 rocdl idop加attr (弃用)
   pm.addNestedPass<mlir::func::FuncOp>(createLoopInvariantCodeMotionPass());
   pm.addPass(mlir::createConvertSCFToCFPass());                    // scf -> cf
@@ -113,7 +113,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createSymbolDCEPass());
   // pm.addPass(createMallocFuncOpArgTypeI32ToI64Pass());                      // 将malloc 的 func 的函数签名换成 i64，ptrtointOp/callOp跟着换（因为如果强制使用malloci32，后续llvmtranslation报错，llvm malloc只支持i64）
   pm.addPass(createGlobalShmSetZeroPass());
-  pm.addPass(mlir::createLowerGpuOpsToROCDLOpsPass());
+  // pm.addPass(mlir::createLowerGpuOpsToROCDLOpsPass());
   // pm.addPass(createConvertGPUPrintToLLVMPass());
   
   // pm.addPass(mlir::createGpuToLLVMConversionPass());

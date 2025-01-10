@@ -175,11 +175,9 @@ mlir::affine::AffineForOp shiftBufferDatas(mlir::OpBuilder builder, mlir::Value 
         };
         b.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, loadWidth, 1, mlir::ValueRange({}), innerBody);
       } else {
-        // for (auto w : group) {
         auto vectorType = mlir::VectorType::get(loadWidth, dstType.getElementType());
         ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, srcMap, srcOperands);
         b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, dstOperands);
-        // }
       }
     }
   );
