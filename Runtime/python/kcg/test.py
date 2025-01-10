@@ -16,22 +16,33 @@ from kcg.KCGCompiler import KCGCompiler
 
 ############### User config ###############
 m_len=1024  # 16 blocks
-n_len=1024  # 16 blocks
+n_len=1056  # 16 blocks
 k_len=1024   # 8 blocks
 normal_case = False
 
 def case_normal_0(kp_matmul: KernelArgMatmul) :
+    #   {KEY_BLOCK_SIZE_M, 64}, {KEY_BLOCK_SIZE_N, 48}, {KEY_BLOCK_SIZE_K, 32}, {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 6}, 
+    #   {KEY_GLOB_LOAD_WIDTH_A, 2}, {KEY_GLOB_LOAD_WIDTH_B, 2}, 
+    #   {KEY_BLOCK_LAYOUT_M, 2}, {KEY_BLOCK_LAYOUT_N, 1}, {KEY_WARP_LAYOUT_M, 8}, {KEY_WARP_LAYOUT_N, 8},
+    #   {KEY_WARP_SCATTER_WIDTH_A, 2}, {KEY_WARP_SCATTER_WIDTH_B, 2}, {KEY_THREAD_SCATTER_WIDTH_A, 2}, {KEY_THREAD_SCATTER_WIDTH_B, 2}, 
+    #   {KEY_LOCAL_SPLIT_U, 2}, {KEY_BLOCK_MAPPING, 8}, {KEY_WARP_SIZE, 64}, {KEY_GLOB_STORE_WIDTH, 2}, 
+    #   {KEY_DTYPE_A, (int)KcgDtype::float32},
+    #   {KEY_DTYPE_B, (int)KcgDtype::float32},
+    #   {KEY_DTYPE_C, (int)KcgDtype::float32},
+    #   {KEY_M, 1024},{KEY_N, 1056},{KEY_K, 1024}, 
+    #   {KEY_IS_A_TRANSPOSE, 1}
+    
     kp_matmul.BLOCK_SIZE_M = 64
-    kp_matmul.BLOCK_SIZE_N = 64
+    kp_matmul.BLOCK_SIZE_N = 48
     kp_matmul.BLOCK_SIZE_K = 32
     kp_matmul.THREAD_SIZE_M = 4
-    kp_matmul.THREAD_SIZE_N = 4
-    kp_matmul.GLOB_LOAD_WIDTH_A = 4
-    kp_matmul.GLOB_LOAD_WIDTH_B = 4
-    kp_matmul.BLOCK_LAYOUT_M = 4
+    kp_matmul.THREAD_SIZE_N = 6
+    kp_matmul.GLOB_LOAD_WIDTH_A = 2
+    kp_matmul.GLOB_LOAD_WIDTH_B = 2
+    kp_matmul.BLOCK_LAYOUT_M = 2
     kp_matmul.BLOCK_LAYOUT_N = 1
-    kp_matmul.WARP_LAYOUT_M = 4
-    kp_matmul.WARP_LAYOUT_N = 16
+    kp_matmul.WARP_LAYOUT_M = 8
+    kp_matmul.WARP_LAYOUT_N = 8
     kp_matmul.WARP_SCATTER_WIDTH_A = 2
     kp_matmul.WARP_SCATTER_WIDTH_B = 2
     kp_matmul.THREAD_SCATTER_WIDTH_A = 2
@@ -39,8 +50,9 @@ def case_normal_0(kp_matmul: KernelArgMatmul) :
     kp_matmul.LOCAL_SPLIT_U = 2
     kp_matmul.BLOCK_MAPPING = 8
     kp_matmul.WARP_SIZE = 64
-    kp_matmul.GLOB_STORE_WIDTH = 4
+    kp_matmul.GLOB_STORE_WIDTH = 2
     kp_matmul.isATranspose = 1
+    
 
 
 def case_bad_0(kp_matmul: KernelArgMatmul) :
@@ -79,7 +91,7 @@ def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
 
 def test_correctness(kpm : KernelArgMatmul):
     kernelCompiler = KCGCompiler()
-    hsacoPath,kernelName = kernelCompiler.compileKernel(kpm)
+    hsacoPath,kernelName,gridDimX,gridDimY,gridDimZ,blockDimX,blockDimY,blockDimZ = kernelCompiler.compileKernel(kpm)
 
     print("========= hsacoPath = ",hsacoPath)
     print("========= kernelName = ",kernelName)
@@ -88,6 +100,8 @@ def test_correctness(kpm : KernelArgMatmul):
     # kernelName = 'GEMM_mnk1024x1024x512_f32f32f32_TTmn4x4_BTmnk64x64x16'
 
     inConfig = UserInputs(hsacoPath,kernelName,kpm)
+    inConfig.m_gridDims = [gridDimX,gridDimY,gridDimZ]
+    inConfig.m_blockDims = [blockDimX,blockDimY,blockDimZ]
     inConfig.operatorKind = EnumOperator.Matmul
     packedKernel = CompiledKernelFactory.getKernel(inConfig)
     
@@ -97,7 +111,7 @@ def test_correctness(kpm : KernelArgMatmul):
     d = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
     M, K = a.shape
     K, N = b.shape
-    atrans = torch.transpose(a,0,1)
+    atrans = torch.transpose(a,1,0)
     res = []
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
@@ -106,7 +120,7 @@ def test_correctness(kpm : KernelArgMatmul):
         packedKernel.run(a,b,c) # warm up
         for i in range(0,benchmarkCount) : # benchmark
             start_event.record()
-            packedKernel.run(atrans,b,c)
+            packedKernel.run(torch.t(a),b,c)
             end_event.record()
             torch.cuda.synchronize()
             elapsed_time = start_event.elapsed_time(end_event)
@@ -143,7 +157,7 @@ def test_correctness(kpm : KernelArgMatmul):
         print('test correct!')
     else:
         diff,max_error= compare_with_error(d,c)
-        print('test fail! maxerror = ',max_error, '; diff=',diff)
+        print(f'test fail! maxerror={max_error}, diff=[{diff} / {M*N}], diffrate={diff/(M*N)}')
         # hipprof --pmc python ./test.py 
 
 kp_matmul.check()

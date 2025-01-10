@@ -55,6 +55,7 @@ public:
   int m_GLOB_STORE_WIDTH;  // 18+9=27
 
 #ifdef COMPILE_AS_PYMODULE
+  // 此处应保证python传参的顺序和parse顺序相同
   bool parse(PyObject* args){
     if(PyArg_ParseTuple(args, std::string(27,'i').c_str(),
       &m_BLOCK_SIZE_M,
@@ -138,6 +139,8 @@ std::ostream& operator<<(std::ostream& os, MatmulParams arg){
 struct KernelInfo {
   std::string m_hsacoPath;
   std::string m_kernelName;
+  std::vector<int> m_gridDims = {1,1,1};
+  std::vector<int> m_blockDims = {1,1,1};
 };
 
 std::map<Config, KernelInfo> testConfigs(
@@ -194,6 +197,10 @@ std::map<Config, KernelInfo> testConfigs(
     std::cout << hsacoPath << "\n";
     info.m_hsacoPath = hsacoPath;
     info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();
+    auto gridDim = tools::getIntAttr(kernel,AttrGridDim);
+    auto blockDim = tools::getIntAttr(kernel,AttrBlockDim);
+    info.m_gridDims[0] = gridDim;
+    info.m_blockDims[0] = blockDim;
     result[config] = info;
     std::cout << "==== kernel name : " << info.m_kernelName << "\n";
   }
@@ -242,7 +249,12 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
   Py_END_ALLOW_THREADS;
   Py_INCREF(Py_None);
   // return Py_None;
-  return Py_BuildValue("(ss)",kernel.m_hsacoPath.c_str(),kernel.m_kernelName.c_str());
+  return Py_BuildValue("(ssiiiiii)",
+    kernel.m_hsacoPath.c_str(),
+    kernel.m_kernelName.c_str(),
+    kernel.m_gridDims[0],kernel.m_gridDims[1],kernel.m_gridDims[2],
+    kernel.m_blockDims[0],kernel.m_blockDims[1],kernel.m_blockDims[2]
+  );
 }
 
 static PyMethodDef ModuleMethods[] = {

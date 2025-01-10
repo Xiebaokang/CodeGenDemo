@@ -21,29 +21,27 @@ class UserInputs:
         self.hsacoPath = hsaco_path
         self.kernelFuncName = kernel_func_name
         self.kernelParam = kernelParam
+        self.m_gridDims = [1,1,1]
+        self.m_blockDims = [1,1,1]
 
     def gridDims(self):  # 行优先矩阵，行方向为x方向，尺寸为n
-        m = self.kernelParam.M
-        n = self.kernelParam.N
-        return [ 
-                n // self.kernelParam.BLOCK_SIZE_N, 
-                m // self.kernelParam.BLOCK_SIZE_M ,
-                1 
-            ]
+        return self.m_gridDims
     
     def blockDims(self):
-        return [
-                self.kernelParam.BLOCK_LAYOUT_N * self.kernelParam.WARP_LAYOUT_N, 
-                self.kernelParam.BLOCK_LAYOUT_M * self.kernelParam.WARP_LAYOUT_M,
-                1 
-            ]
+        return self.m_blockDims
         
     def sharedMem(self):
         # 假设 ABC类型相同
+        # 还需要考虑 doublebuffer的情况
         kp = self.kernelParam
-        sizeA = 2*kp.BLOCK_SIZE_M*kp.BLOCK_SIZE_K*sizeof(kp.dtype('A'))
-        sizeB = 2*kp.BLOCK_SIZE_N*kp.BLOCK_SIZE_K*sizeof(kp.dtype('B'))
-        return sizeA + sizeB
+        sizeA = kp.BLOCK_SIZE_M*kp.BLOCK_SIZE_K*sizeof(kp.dtype('A'))
+        sizeB = kp.BLOCK_SIZE_N*kp.BLOCK_SIZE_K*sizeof(kp.dtype('B'))
+        sizeC = -1
+        if kp.LOCAL_SPLIT_U > 1 :
+            sizeC = kp.BLOCK_SIZE_M * kp.BLOCK_SIZE_N * kp.LOCAL_SPLIT_U * sizeof(kp.dtype('A'))
+        if (sizeA + sizeB) > sizeC :
+            return sizeA + sizeB
+        return sizeC
     
     def numCTA(self) : 
         ret = 1

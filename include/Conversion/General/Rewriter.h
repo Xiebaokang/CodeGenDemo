@@ -22,7 +22,7 @@ mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineFo
 
 void loopToParallelZ(mlir::affine::AffineForOp loop, mlir::affine::AffineParallelOp &parallelOp);
 
-llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp);
+llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp, int* outUpperBound = nullptr);
 
 template <typename ParentOpType>
 mlir::Value alloc_buffer(ParentOpType father, MemorySpace ms, const std::vector<int64_t> shape_, mlir::Type dtype) {

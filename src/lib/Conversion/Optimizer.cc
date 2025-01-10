@@ -287,10 +287,13 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
     tools::_opSetDescription(smA.getDefiningOp(),"smA");
     tools::_opSetDescription(smB.getDefiningOp(),"smB");
-    // LOG_DEBUG("===== before alloc_buffer =======\n",module);
-
-    Rewriter::parallelToOneDim(blockLevel);
-    // LOG_DEBUG("===== before parallelToOneDim =======\n",module);
+    LOG_DEBUG("===== before alloc_buffer =======\n",module);
+    int blockDimX = 0;
+    int gridDimX = 0;
+    Rewriter::parallelToOneDim(blockLevel,&blockDimX);
+    tools::opSetAttr(module,AttrGridDim, gridDimX);
+    tools::opSetAttr(module,AttrBlockDim, blockDimX);
+    LOG_DEBUG("===== before parallelToOneDim =======\n",module);
     
     auto blockIdx = Analyzer::getParallelIdx(gridLevel);
     auto threadIdx = Analyzer::getParallelIdx(blockLevel);
@@ -379,8 +382,10 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     Rewriter::vectorize(n_inner_2, config["THREAD_SCATTER_WIDTH_B"]);
     LOG_DEBUG("===== vectorize =======\n",module);
-
-    Rewriter::parallelToOneDim(gridLevel);
+    
+    int gridDims = 0;
+    Rewriter::parallelToOneDim(gridLevel, &gridDims);
+    tools::opSetAttr(module,AttrGridDim,gridDims);
     // Rewriter::BlockMapping(gridLevel, config["BLOCK_MAPPING"]);
     LOG_DEBUG("===== parallelToOneDim gridLevel =======\n",module);
     

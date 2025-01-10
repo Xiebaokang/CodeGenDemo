@@ -1,5 +1,6 @@
 
-from kcg.Utils import PathManager,KernelArgMatmul
+from kcg.Utils import PathManager
+from Operators.matmul import *
 
 
 class KCGCompiler :

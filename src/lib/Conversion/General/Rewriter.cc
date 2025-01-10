@@ -409,7 +409,7 @@ mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineFo
   return parallelOp;
 }
 
-llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp) {
+llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &parallelOp, int* outUpperBound) {
   // 将parallelOp转成一维表示
   std::vector<int64_t> uppers;
   auto builder = getBuilder(parallelOp, Position::before);
@@ -417,6 +417,9 @@ llvm::SmallVector<mlir::Value> parallelToOneDim(mlir::affine::AffineParallelOp &
   for (auto i : parallelOp.getUpperBoundsMap().getConstantResults()) {
     upperBound *= i;
     uppers.push_back(i);
+  }
+  if(outUpperBound != nullptr){
+    *outUpperBound = upperBound;
   }
   // create new parallelOp
   auto lowerMap = mlir::AffineMap::get(0, 0, llvm::ArrayRef<mlir::AffineExpr>(builder.getAffineConstantExpr(0)), builder.getContext());

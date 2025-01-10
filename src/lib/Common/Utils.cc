@@ -65,6 +65,22 @@ void opSetAttr(mlir::Operation* op, const std::string& name, const std::string& 
   op->setAttr(name,b.getStringAttr(val)); 
 }
 
+void opSetAttr(mlir::Operation* op, const std::string& name, int val){
+  assert(op != nullptr && "opSetAttr::nullptr error!");
+  mlir::OpBuilder b(op->getContext());
+  op->setAttr(name,b.getIntegerAttr(b.getI32Type(),val)); 
+}
+
+uint64_t getIntAttr(mlir::Operation* op, const std::string& name){
+  assert(op != nullptr && "getAttr:nullptr error!");
+  uint64_t ret = -1;
+  if(op->hasAttr(name)){
+    auto attr = mlir::dyn_cast<mlir::IntegerAttr>(op->getAttr(name));
+    ret = attr.getValue().getLimitedValue();
+  }
+  return ret;
+}
+
 bool isOpAttrEqualToString(mlir::Operation* op, const std::string& name, const std::string& expectedvalue){
   assert(op != nullptr && "isOpAttrEqualToString::nullptr error!");
   if(op->hasAttr(name)){
