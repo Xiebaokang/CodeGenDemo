@@ -463,9 +463,11 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     
     auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
     auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
+    LOG_DEBUG("===== pipeline 1 =======\n",module);
     auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, fragB, k_inner);
     auto doubleLoadFragA = Rewriter::pipeline({loadFragA}, fragA, k_inner);
-    LOG_DEBUG("===== pipeline =======\n",module);
+    LOG_DEBUG("===== k_inner =======\n",k_inner);
+    LOG_DEBUG("===== pipeline 2 =======\n",module);
     // module.dump();
 
     Rewriter::detach_last_loop(k_inner);
