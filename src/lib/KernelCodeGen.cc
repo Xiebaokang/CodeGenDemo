@@ -46,7 +46,8 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
 #endif
   pm.addPass(ReplaceAllocToGetglobalPass());
 #if FLAG
-  // pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开
+  pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开，展开次数和性能有很大关系
+  pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());   // if的简化
 #endif
   pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());   // 循环不变量移动
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());  // 加入后会导致shm conflict 增加
