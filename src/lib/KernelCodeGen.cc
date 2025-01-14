@@ -168,7 +168,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
 
 #if 0
   // test insert 
-  std::ifstream ifs("/home/pangyunfei/xushilong/CodeGenDemo/ceshiData/kcg/testLLVMIR.mlir");
+  std::ifstream ifs("/home/bizefeng/CodeGenDemo/ceshiData/kcg/testLLVMIR.mlir");
   std::stringstream buffer;
   if(ifs.is_open()){
     buffer << ifs.rdbuf();

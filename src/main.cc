@@ -176,7 +176,7 @@ std::map<Config, KernelInfo> testConfigs(
     mlir::LLVM::LLVMDialect
     >();
     llvm::outs() << " ---- Loading outMLIR\n" ;llvm::outs().flush();
-    auto parsed = parseSourceFile<ModuleOp>("/home/pangyunfei/xushilong/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
+    auto parsed = parseSourceFile<ModuleOp>("/home/bizefeng/CodeGenDemo/Runtime/python/kcg/error.mlir", &ctx);
     auto kernel = parsed.get();
     llvm::outs() << "=== outer MLIR = \n" ;llvm::outs().flush();kernel.dump();
 #else
@@ -288,7 +288,7 @@ int main(){
       {KEY_GLOB_LOAD_WIDTH_A, 2}, {KEY_GLOB_LOAD_WIDTH_B, 2}, 
       {KEY_BLOCK_LAYOUT_M, 2}, {KEY_BLOCK_LAYOUT_N, 2}, {KEY_WARP_LAYOUT_M, 8}, {KEY_WARP_LAYOUT_N, 8},
       {KEY_WARP_SCATTER_WIDTH_A, 2}, {KEY_WARP_SCATTER_WIDTH_B, 2}, {KEY_THREAD_SCATTER_WIDTH_A, 2}, {KEY_THREAD_SCATTER_WIDTH_B, 2}, 
-      {KEY_LOCAL_SPLIT_U, 2}, {KEY_BLOCK_MAPPING, 8}, {KEY_WARP_SIZE, 64}, {KEY_GLOB_STORE_WIDTH, 2}, 
+      {KEY_LOCAL_SPLIT_U, 1}, {KEY_BLOCK_MAPPING, 8}, {KEY_WARP_SIZE, 64}, {KEY_GLOB_STORE_WIDTH, 2}, 
       {KEY_DTYPE_A, (int)KcgDtype::float32},
       {KEY_DTYPE_B, (int)KcgDtype::float32},
       {KEY_DTYPE_C, (int)KcgDtype::float32},

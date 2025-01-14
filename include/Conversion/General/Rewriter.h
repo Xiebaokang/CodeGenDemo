@@ -11,6 +11,8 @@ namespace KernelCodeGen {
 namespace Rewriter {
 
 
+mlir::Value searchDescOp(mlir::ModuleOp module, std::string desc);
+
 std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
 
 mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &hasIterLoop, std::vector<mlir::affine::AffineForOp> &loops);
@@ -117,7 +119,7 @@ std::vector<std::vector<mlir::affine::AffineForOp>> get_write(
   mlir::affine::AffineParallelOp parallelLevel, mlir::Value dst);
 
 std::vector<std::vector<mlir::affine::AffineForOp>> pipeline(
-  std::vector<mlir::affine::AffineForOp> readBodys, mlir::Value &buffer, mlir::affine::AffineForOp compute_at);
+  std::vector<mlir::affine::AffineForOp> readBodys, mlir::Value &buffer, mlir::affine::AffineForOp compute_at, std::string bufferName);
 
 void change_double_buffer(mlir::affine::AffineForOp, mlir::Value buffer);
 

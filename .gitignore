@@ -2,6 +2,10 @@ bin
 build
 Runtime/python/kcg/*/__pycache__/
 Runtime/python/kcg/__pycache__/
+Runtime/python/kcg/temp
+Runtime/python/kcg/temp1
+tempmlir/
+runkernel
 log
 *.log
 *.amdgcn

@@ -381,8 +381,8 @@ std::string translateMLIRToLLVMIR(mlir::ModuleOp module, Target target, const in
 
 // 弃用
 std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module) {
-  std::string llvmPath{"/home/pangyunfei/xie/CodeGenDemo/build/llvmir.ll"};
-  std::string mlirPtah{"/home/pangyunfei/xie/CodeGenDemo/build/llvm-dialect.mlir"};
+  std::string llvmPath{"/home/bizefeng/CodeGenDemo/build/llvmir.ll"};
+  std::string mlirPtah{"/home/bizefeng/CodeGenDemo/build/llvm-dialect.mlir"};
   // 存储mlir
   std::error_code ec;
   llvm::raw_fd_ostream outputFile(mlirPtah, ec);
@@ -394,7 +394,7 @@ std::string tranlateAndSaveLLVMIR(mlir::ModuleOp module) {
   outputFile.close();
   // 运行指令
   std::stringstream command;
-  command << "/home/pangyunfei/xie/CodeGenDemo/bin/mlir-translate ";
+  command << "/home/bizefeng/CodeGenDemo/bin/mlir-translate ";
   command << mlirPtah << " -mlir-to-llvmir > " << llvmPath;
 
   int result = system(command.str().c_str());

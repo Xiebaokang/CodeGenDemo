@@ -267,6 +267,11 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto k_outer = k_axes[0], k_mider = k_axes[1], k_inner = k_axes[2];
     LOG_DEBUG("===== after split =======\n",module);
 
+    // LOG_DEBUG("===== k_outer =======\n",k_outer);
+    // LOG_DEBUG("===== k_mider =======\n",k_mider);
+    // LOG_DEBUG("===== k_inner =======\n",k_inner);
+    
+
     Rewriter::loopToParallelZ(k_inner, blockLevel);
     LOG_DEBUG("===== after loopToParallelZ =======\n",module);
 
@@ -346,6 +351,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       auto elementC = C.getType().dyn_cast<mlir::MemRefType>().getElementType();
       auto regC_ = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"] * config["THREAD_SIZE_N"]}, elementC);
       auto smC = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared, {config["LOCAL_SPLIT_U"], config["BLOCK_SIZE_M"], config["BLOCK_SIZE_N"]}, elementC);
+      tools::_opSetDescription(regC_.getDefiningOp(),"regC_");
       tools::_opSetDescription(smC.getDefiningOp(),"smC");
 
       auto cacheWriteShCMap = getRegToSharedMapSMC(builder, config);
@@ -367,9 +373,9 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       auto StoreBarrier = Rewriter::barrier(m_inner_0, Position::after);
       LOG_DEBUG("===== load write to C =======\n",module);
 
-      Rewriter::bufferCombine({{smA, smB}, {smC}});
-      Rewriter::bufferCombine({{regC}, {regC_}});
-      LOG_DEBUG("===== bufferCombine =======\n",module);
+      // Rewriter::bufferCombine({{smA, smB}, {smC}});
+      // Rewriter::bufferCombine({{regC}, {regC_}});
+      // LOG_DEBUG("===== bufferCombine =======\n",module);
 
     } else {
       auto cacheWriteCMap = getRegToGlobMapC(builder, config);
@@ -399,34 +405,48 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // LOG_DEBUG("===== after DCE =======\n",module);
 
     
-
-    // auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
-    // auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
-    // auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, fragB, k_inner);
-    // auto doubleLoadFragA = Rewriter::pipeline({loadFragA}, fragA, k_inner);
+    LOG_DEBUG("===== k_outer =======\n",k_outer);
+    auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer, "smB");
+    auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer, "smA");
+    LOG_DEBUG("===== after sm pipeline =======\n",module);
+    LOG_DEBUG("===== k_inner =======\n",k_inner);
+    auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, regB, k_mider, "regB");
+    auto doubleLoadFragA = Rewriter::pipeline({loadFragA}, regA, k_mider, "regA");
+    LOG_DEBUG("===== after reg pipeline =======\n",module);
     // // module.dump();
 
-    // Rewriter::detach_last_loop(k_inner);
 
-    // Rewriter::schedule(doubleLoadTileA[0][0], doubleLoadTileB[0][0], Position::before);
-    // Rewriter::schedule(doubleLoadTileA[0][1], doubleLoadTileB[0][1], Position::before); 
-    // Rewriter::schedule(gpuBarrierPrefix, doubleLoadTileB[0][1], Position::after);
-    // Rewriter::schedule(doubleLoadTileB[1][0], doubleLoadTileA[1][0], Position::after);
-    // Rewriter::schedule(doubleLoadTileA[1][1], doubleLoadTileB[1][1], Position::before);
-    // Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
-    // auto ifOp = doubleLoadTileA[1][1]->getParentOp();
-    // Rewriter::schedule(ifOp, k_inner, Position::after); 
-    // Rewriter::extract_loop(doubleLoadFragA[0][0], k_outer, /*iteration*/0);
-    // Rewriter::extract_loop(doubleLoadFragB[0][0], k_outer, /*iteration*/0);
-    // Rewriter::schedule(doubleLoadFragB[0][0], k_outer, Position::end);
-    // Rewriter::schedule(doubleLoadFragA[0][0], k_outer, Position::end);
+    Rewriter::detach_last_loop(k_mider);
+
+    Rewriter::schedule(doubleLoadTileA[0][0], doubleLoadTileB[0][0], Position::before);
+    Rewriter::schedule(doubleLoadTileA[0][1], doubleLoadTileB[0][1], Position::before); 
+    Rewriter::schedule(gpuBarrierPrefix, doubleLoadTileB[0][1], Position::after);
+    Rewriter::schedule(doubleLoadTileB[1][0], doubleLoadTileA[1][0], Position::after);
+    Rewriter::schedule(doubleLoadTileA[1][1], doubleLoadTileB[1][1], Position::before);
+    Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
+    auto ifOp = doubleLoadTileA[1][1]->getParentOp();
+    Rewriter::schedule(ifOp, k_mider, Position::after); 
+    Rewriter::extract_loop(doubleLoadFragA[0][0], k_outer, /*iteration*/0);
+    Rewriter::extract_loop(doubleLoadFragB[0][0], k_outer, /*iteration*/0);
+    Rewriter::schedule(doubleLoadFragB[0][0], k_outer, Position::end);
+    Rewriter::schedule(doubleLoadFragA[0][0], k_outer, Position::end);
     // // module.dump();
 
-    // Rewriter::change_double_buffer(doubleLoadFragA[0][0], smA);
-    // Rewriter::change_double_buffer(doubleLoadFragB[0][0], smB);;
+    Rewriter::change_double_buffer(doubleLoadFragA[0][0], smA);
+    Rewriter::change_double_buffer(doubleLoadFragB[0][0], smB);
 
-    // Rewriter::take_off_true_if(module);
-    // Rewriter::delete_false_if(module);
+    if (config["LOCAL_SPLIT_U"] > 1) {
+      auto smC = Rewriter::searchDescOp(module, "smC");
+      auto regC_ = Rewriter::searchDescOp(module, "regC_");
+      auto smCombined = Rewriter::bufferCombine({{smA, smB}, {smC}});
+      tools::_opSetDescription(smCombined.getDefiningOp(),"smCombined");
+      auto regCombined = Rewriter::bufferCombine({{regC}, {regC_}});
+      tools::_opSetDescription(regCombined.getDefiningOp(),"regCombined");
+      LOG_DEBUG("===== bufferCombine =======\n",module);
+    }
+
+    Rewriter::take_off_true_if(module);
+    Rewriter::delete_false_if(module);
     // // module.dump();
 
     // int64_t threshold = std::max(config["BLOCK_SIZE_K"], std::max(config["THREAD_SIZE_M"], config["THREAD_SIZE_N"]));
