@@ -59,7 +59,7 @@ def case_bad_0(kp_matmul: KernelArgMatmul) :
     # Cijk_Ailk_Bljk_SB_MT256x32x8_SN_APM1_AF0EM1_AF1EM1_AMAS3_ASAE01_ASCE01_ASEM1_BL1_DTL0_ETSP_EPS1_FL0_GRVW4_GSU1_GSUAMB_ISA906_IU1_K1_KLA_LPA0_LPB0_LDL1_LRVW4_MAC_MDA2_NLCA1_NLCB1_ONLL1_PK0_PGR1_PLR1_RK0_SU32_SUM0_SUS256_SVW4_SNLL0_TT8_4_USFGROn1_VAW1_VSn1_VW4_WG32_8_1_WGM1
     kp_matmul.BLOCK_SIZE_M= 256  # 256
     kp_matmul.BLOCK_SIZE_N= 32 # 32
-    kp_matmul.BLOCK_SIZE_K= 8  # 8
+    kp_matmul.BLOCK_SIZE_K= 8  # 32
     kp_matmul.THREAD_SIZE_M= 8
     kp_matmul.THREAD_SIZE_N= 4  # th=32*8
     kp_matmul.VECTORIZE_WIDTH= 4  # 数字的个数
@@ -68,7 +68,7 @@ def case_bad_0(kp_matmul: KernelArgMatmul) :
     kp_matmul.WARP_LAYOUT_M= 16
     kp_matmul.WARP_LAYOUT_N= 4
     kp_matmul.WARP_SIZE= 64
-    kp_matmul.isATranspose = 0
+    kp_matmul.isATranspose = 1
 
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
@@ -78,6 +78,19 @@ kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
 
 case_normal_0(kp_matmul)
 # case_bad_0(kp_matmul)
+<<<<<<< HEAD
+=======
+
+# def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
+#     abs_diff = torch.abs(tensor1 - tensor2)
+#     rel_diff = abs_diff / (torch.abs(tensor1) + 1e-12)  # 避免除以零的情况
+
+#     # 比较绝对误差和相对误差
+#     error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
+#     diff_elements = torch.sum(error_mask).item()
+#     max_error = torch.max(torch.abs(tensor1 - tensor2))
+#     return diff_elements, max_error
+>>>>>>> dev_bizefeng
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
@@ -86,8 +99,20 @@ def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     # 比较绝对误差和相对误差
     error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
     diff_elements = torch.sum(error_mask).item()
-    max_error = torch.max(torch.abs(tensor1 - tensor2))
-    return diff_elements, max_error
+    max_error = torch.max(abs_diff)
+
+    # 找到第一个不匹配的索引及其对应值
+    if diff_elements > 0:
+        first_error_index = torch.nonzero(error_mask, as_tuple=True)
+        first_error_position = tuple(idx[0].item() for idx in first_error_index)
+        value_tensor1 = tensor1[first_error_position]
+        value_tensor2 = tensor2[first_error_position]
+    else:
+        first_error_position = None
+        value_tensor1 = None
+        value_tensor2 = None
+
+    return diff_elements, max_error, first_error_position, value_tensor1, value_tensor2
 
 def test_correctness(kpm : KernelArgMatmul):
     kernelCompiler = KCGCompiler()
@@ -117,7 +142,7 @@ def test_correctness(kpm : KernelArgMatmul):
     end_event = torch.cuda.Event(enable_timing=True)
     benchmarkCount = 10
     if kpm.isATranspose :
-        packedKernel.run(a,b,c) # warm up
+        packedKernel.run(atrans,b,c) # warm up
         for i in range(0,benchmarkCount) : # benchmark
             start_event.record()
             packedKernel.run(torch.t(a),b,c)
@@ -142,22 +167,40 @@ def test_correctness(kpm : KernelArgMatmul):
     #     )
     res1 = []
     res1.clear()
-    torch.matmul(a,b) # warm up
-    for i in range(0,benchmarkCount) : # benchmark
-        start_event.record()
-        d = torch.matmul(a,b)
-        end_event.record()
-        torch.cuda.synchronize()
-        elapsed_time = start_event.elapsed_time(end_event)
-        res1.append(elapsed_time)
+    if kpm.isATranspose :
+        torch.matmul(atrans,b) # warm up
+        for i in range(0,benchmarkCount) : # benchmark
+            start_event.record()
+            d = torch.matmul(atrans,b)
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed_time = start_event.elapsed_time(end_event)
+            res1.append(elapsed_time)
+    else:
+        torch.matmul(a,b) # warm up
+        for i in range(0,benchmarkCount) : # benchmark
+            start_event.record()
+            d = torch.matmul(a,b)
+            end_event.record()
+            torch.cuda.synchronize()
+            elapsed_time = start_event.elapsed_time(end_event)
+            res1.append(elapsed_time)
     print(f"rocblas median time: {np.median(res1)} ms")
     print(f"speed up: {np.median(res1)/np.median(res)}")
     print(c)
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
     else:
+<<<<<<< HEAD
         diff,max_error= compare_with_error(d,c)
         print(f'test fail! maxerror={max_error}, diff=[{diff} / {M*N}], diffrate={diff/(M*N)}')
+=======
+        diff,max_error,first_error_position, value_tensor1, value_tensor2 = compare_with_error(d,c)
+        print('test fail! maxerror = ',max_error, '; diff=',diff)
+        print(f"First error position: {first_error_position}")
+        print(f"Value in tensor1: {value_tensor1}")
+        print(f"Value in tensor2: {value_tensor2}")
+>>>>>>> dev_bizefeng
         # hipprof --pmc python ./test.py 
 
 kp_matmul.check()

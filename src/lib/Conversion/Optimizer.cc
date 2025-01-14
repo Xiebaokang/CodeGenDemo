@@ -250,9 +250,15 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto m_axes = Rewriter::split(loopM, 3, {config["THREAD_SIZE_M"], config["BLOCK_SIZE_M"]});
     auto n_axes = Rewriter::split(loopN, 3, {config["THREAD_SIZE_N"], config["BLOCK_SIZE_N"]});
+<<<<<<< HEAD
+=======
+    llvm::outs() << "===== after split m/n =======\n";llvm::outs().flush(); module.dump();
+
+>>>>>>> dev_bizefeng
     auto m_outer = m_axes[0], m_mider = m_axes[1], m_inner = m_axes[2];
     auto n_outer = n_axes[0], n_mider = n_axes[1], n_inner = n_axes[2];
     Rewriter::reorder({m_outer, n_outer, m_mider, n_mider, m_inner, n_inner});
+<<<<<<< HEAD
     LOG_DEBUG("===== after split & reorder =======\n",module);
 
     auto gridLevel = Rewriter::parallel({m_outer, n_outer});
@@ -271,6 +277,42 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // LOG_DEBUG("===== k_mider =======\n",k_mider);
     // LOG_DEBUG("===== k_inner =======\n",k_inner);
     
+=======
+    llvm::outs() << "===== m/n reorder =======\n";llvm::outs().flush(); module.dump();
+
+    std::vector<mlir::affine::AffineForOp> kmn_axes{loopK, m_inner, n_inner};
+    LOG_DEBUG("===== m_inner =======\n",m_inner);
+    LOG_DEBUG("===== n_inner =======\n",n_inner);
+    LOG_DEBUG("===== loopk =======\n",loopK);
+    // loopk寄存器实例化，迭代变量外提
+    auto tileC = Rewriter::bufferizeLoopCarryVar(kmn_axes);
+    LOG_DEBUG("===== after bufferizeLoopCarryVar =======\n",module);
+    loopK = kmn_axes[0], m_inner = kmn_axes[1], n_inner = kmn_axes[2];
+
+    Rewriter::reorder({loopK, m_inner, n_inner});
+    // module.dump();
+    LOG_DEBUG("===== after reorderK =======\n",module);
+
+    auto k_axes = Rewriter::split(loopK, 2, {config["BLOCK_SIZE_K"]});
+    LOG_DEBUG("===== after splitK =======\n",module);
+    auto k_outer = k_axes[0], k_inner = k_axes[1];
+    tools::_opSetDescription(k_inner,"k_inner");
+    tools::_opSetDescription(k_outer,"k_outer");
+    LOG_DEBUG("===== after splitKopSetDescription =======\n",module);
+    
+    // int localsplitu = 2;
+    // auto lsu_axes = Rewriter::localSplitU(k_inner, localsplitu);
+    // tools::_opSetDescription(lsu_axes[0],"local_split_u");
+    // LOG_DEBUG("===== after localSplitU =======\n",module);
+    
+    auto gridLevel = Rewriter::parallel({m_outer, n_outer});
+    auto blockLevel = Rewriter::parallel({m_mider, n_mider});
+    
+    LOG_DEBUG("===== after parallel =======\n",module);
+    
+    int64_t blockThreads;
+    auto blockDim = Analyzer::getParallelNumber(blockLevel, blockThreads);
+>>>>>>> dev_bizefeng
 
     Rewriter::loopToParallelZ(k_inner, blockLevel);
     LOG_DEBUG("===== after loopToParallelZ =======\n",module);
@@ -284,6 +326,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto glob_load_total_width_b = config["BLOCK_SIZE_K"] * config["BLOCK_SIZE_N"] / blockThreads;
     auto elementA = A.getType().dyn_cast<mlir::MemRefType>().getElementType();
     auto elementB = B.getType().dyn_cast<mlir::MemRefType>().getElementType();
+<<<<<<< HEAD
     auto regB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_N"]}, elementB);
     auto regA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {config["THREAD_SIZE_M"]}, elementA);
     auto tempB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {glob_load_total_width_b}, elementB);
@@ -331,6 +374,61 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     auto loadFragB = Rewriter::read(smB, regB, loadFragBMap, {threadIdx[0], k_mider.getInductionVar()}, 
                                     {config["WARP_SCATTER_WIDTH_B"], config["THREAD_SCATTER_WIDTH_B"]}, loadFragA, Position::after);
     LOG_DEBUG("===== read sh_A/B =======\n",module);
+=======
+
+    auto fragB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {fragBSize}, elementB);
+    auto fragA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {fragASize}, elementA);
+
+    auto tileB = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {ldgBSize}, elementB);
+    auto tileA = Rewriter::alloc_buffer(/*parallelLevel*/blockLevel, MemorySpace::local, {ldgASize}, elementA);
+    auto smB = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared,
+            {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_N"]}, elementB);
+    auto smA = Rewriter::alloc_buffer(/*parallelLevel*/gridLevel, MemorySpace::shared,
+            {config["BLOCK_SIZE_K"], config["BLOCK_SIZE_M"]}, elementA);
+    // module.dump();
+    LOG_DEBUG("===== after alloc_buffer =======\n",module);
+    
+    auto blockIdx = Rewriter::getParallelIdx(gridLevel);
+    auto threadIdx = Rewriter::getParallelIdx(blockLevel);
+    
+    auto loadTileAMap = getAffineMap("loadTileA", builder, config);
+    // threadIdx[0], threadIdx[1] 两者先后交换，即可改变 tx ty 的方向
+    // shm->temp
+    llvm::outs() << "===== loadTileAMap =======\n" << loadTileAMap << "\n";llvm::outs().flush();
+    // auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
+    //                   (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+    //                   k_outer, Position::begin);
+    auto loadTileA = Rewriter::read(A, tileA, loadTileAMap, {threadIdx[0], threadIdx[1], blockIdx[0], k_outer.getInductionVar()}, 
+                      (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+                      k_outer, Position::begin);
+    LOG_DEBUG("===== gm->temp loadTileA =======\n",module);
+
+    auto loadTileBMap = getAffineMap("loadTileB", builder, config);
+    llvm::outs() << "===== loadTileB =======\n" << loadTileBMap << "\n";llvm::outs().flush();
+    auto loadTileB = Rewriter::read(B, tileB, loadTileBMap, 
+                      {threadIdx[0], threadIdx[1], k_outer.getInductionVar(), blockIdx[1]}, 
+                      (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
+                      loadTileA, Position::after);
+    // module.dump();
+    LOG_DEBUG("===== gm->temp loadTileB =======\n",module);
+
+    auto storeTileAMap = getAffineMap("storeTileA", builder, config);
+    // auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[1], threadIdx[0]}, 
+    auto storeTileA = Rewriter::write(tileA, smA, storeTileAMap, {threadIdx[0], threadIdx[1]}, 
+                        (ldgASize < config["VECTORIZE_WIDTH"] ? ldgASize : config["VECTORIZE_WIDTH"]), 
+                        loadTileB, Position::after);
+    LOG_DEBUG("===== temp->shm storeTileA =======\n",module);
+
+    auto storeTileBMap = getAffineMap("storeTileB", builder, config);
+    auto storeTileB = Rewriter::write(tileB, smB, storeTileBMap, {threadIdx[0], threadIdx[1]}, 
+                        (ldgBSize < config["VECTORIZE_WIDTH"] ? ldgBSize : config["VECTORIZE_WIDTH"]), 
+                        storeTileA, Position::after);
+    LOG_DEBUG("===== temp->shm storeTileB =======\n",module);
+
+    auto gpuBarrierPrefix = Rewriter::barrier(loadTileA, Position::before);
+    auto gpuBarrierSuffix = Rewriter::barrier(storeTileB, Position::after);
+    LOG_DEBUG("===== barrierTileATileB =======\n",module);
+>>>>>>> dev_bizefeng
 
     auto cacheRead = getCalculateMapReg(builder, config);
     // test(cacheRead);
@@ -340,6 +438,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     auto writeCbody = Rewriter::get_write(blockLevel, C);
     assert(writeCbody.size() == 1);
+<<<<<<< HEAD
     auto m_inner_axes = Rewriter::split(writeCbody[0][0], 3, {config["WARP_SCATTER_WIDTH_A"], config["THREAD_SCATTER_WIDTH_A"]});
     auto n_inner_axes = Rewriter::split(writeCbody[0][1], 3, {config["WARP_SCATTER_WIDTH_B"], config["THREAD_SCATTER_WIDTH_B"]});
     auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1], m_inner_2 = m_inner_axes[2];
@@ -396,6 +495,36 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // Rewriter::BlockMapping(gridLevel, config["BLOCK_MAPPING"]);
     LOG_DEBUG("===== parallelToOneDim gridLevel =======\n",module);
     
+=======
+    auto m_inner_axes = Rewriter::split(writeCbody[0][0], 2, {config["VECTORIZE_WIDTH"]});
+    auto n_inner_axes = Rewriter::split(writeCbody[0][1], 2, {config["VECTORIZE_WIDTH"]});
+    LOG_DEBUG("===== VECTORIZE_WIDTH =======\n",module);
+    auto m_inner_0 = m_inner_axes[0], m_inner_1 = m_inner_axes[1];
+    auto n_inner_0 = n_inner_axes[0], n_inner_1 = n_inner_axes[1];
+    Rewriter::reorder({m_inner_0, n_inner_0, m_inner_1, n_inner_1});
+    // module.dump();
+    tools::_opSetDescription(m_inner_0,"m_inner_0");
+    tools::_opSetDescription(m_inner_1,"m_inner_1");
+    tools::_opSetDescription(n_inner_0,"n_inner_0");
+    tools::_opSetDescription(n_inner_1,"n_inner_1");
+    Rewriter::cache_write(m_inner_0, C, C, getAffineMap("cacheWriteC", builder, config), 
+                          {threadIdx[0], threadIdx[1], blockIdx[0], blockIdx[1],
+                           m_inner_0.getInductionVar(),n_inner_0.getInductionVar(),
+                           m_inner_1.getInductionVar(),n_inner_1.getInductionVar()
+                          });
+
+    Rewriter::vectorize(n_inner_1, config["VECTORIZE_WIDTH"]);
+    LOG_DEBUG("===== cache_write =======\n",module);
+    // module.dump();
+    
+    auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer);
+    auto doubleLoadTileA = Rewriter::pipeline({loadTileA, storeTileA}, smA, k_outer);
+    LOG_DEBUG("===== pipeline 1 =======\n",module);
+    auto doubleLoadFragB = Rewriter::pipeline({loadFragB}, fragB, k_inner);
+    auto doubleLoadFragA = Rewriter::pipeline({loadFragA}, fragA, k_inner);
+    LOG_DEBUG("===== k_inner =======\n",k_inner);
+    LOG_DEBUG("===== pipeline 2 =======\n",module);
+>>>>>>> dev_bizefeng
     // module.dump();
     // mlir::PassManager pm { module.getContext() };
     // pm.addPass(mlir::createSymbolDCEPass());
@@ -404,6 +533,7 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     // pm.run(module);
     // LOG_DEBUG("===== after DCE =======\n",module);
 
+<<<<<<< HEAD
     
     LOG_DEBUG("===== k_outer =======\n",k_outer);
     auto doubleLoadTileB = Rewriter::pipeline({loadTileB, storeTileB}, smB, k_outer, "smB");
@@ -418,19 +548,48 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
 
     Rewriter::detach_last_loop(k_mider);
 
+=======
+    Rewriter::detach_last_loop(k_inner);
+    LOG_DEBUG("===== detach_last_loop =======\n",module);
+    // gma->regmovea 放在 gmb->regmoveb 位置的before
+>>>>>>> dev_bizefeng
     Rewriter::schedule(doubleLoadTileA[0][0], doubleLoadTileB[0][0], Position::before);
+    LOG_DEBUG("===== schedule_0 =======\n",module);
+    // regmovea->shma 放在 regmoveb->shmb 位置的before
     Rewriter::schedule(doubleLoadTileA[0][1], doubleLoadTileB[0][1], Position::before); 
+    LOG_DEBUG("===== schedule_1 =======\n",module);
+    // gpuBarrierPrefix->shma 放在 regmoveb->shmb 位置的after
     Rewriter::schedule(gpuBarrierPrefix, doubleLoadTileB[0][1], Position::after);
-    Rewriter::schedule(doubleLoadTileB[1][0], doubleLoadTileA[1][0], Position::after);
+    LOG_DEBUG("===== schedule_2 =======\n",module);
+    // gma->regmovea 放在 gmb->regmoveb 位置的before(小k循环内)
+    Rewriter::schedule(doubleLoadTileA[1][0], doubleLoadTileB[1][0], Position::before);
+    LOG_DEBUG("===== schedule_3 =======\n",module);
+    // regmovea->shma 放在 regmoveb->shmb 位置的before(小k循环内)
     Rewriter::schedule(doubleLoadTileA[1][1], doubleLoadTileB[1][1], Position::before);
-    Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
+    LOG_DEBUG("===== schedule_4 =======\n",module);
+    // gpuBarrierPrefix->shma 放在 regmoveb->shmb 位置的after(小k循环内)
+    // gpuBarrierSuffix.erase(); ppl0107_1
+    Rewriter::schedule(gpuBarrierSuffix, k_inner, Position::after); // ppl 0107_2
+    // Rewriter::schedule(gpuBarrierSuffix, doubleLoadTileB[1][1], Position::after);
+    LOG_DEBUG("===== schedule_5 =======\n",module);
     auto ifOp = doubleLoadTileA[1][1]->getParentOp();
+<<<<<<< HEAD
     Rewriter::schedule(ifOp, k_mider, Position::after); 
+=======
+    Rewriter::schedule(ifOp, k_inner, Position::after); 
+    LOG_DEBUG("===== first schedule =======\n",module);
+>>>>>>> dev_bizefeng
     Rewriter::extract_loop(doubleLoadFragA[0][0], k_outer, /*iteration*/0);
     Rewriter::extract_loop(doubleLoadFragB[0][0], k_outer, /*iteration*/0);
+    LOG_DEBUG("===== extract_loop =======\n",module);
     Rewriter::schedule(doubleLoadFragB[0][0], k_outer, Position::end);
     Rewriter::schedule(doubleLoadFragA[0][0], k_outer, Position::end);
+<<<<<<< HEAD
     // // module.dump();
+=======
+    LOG_DEBUG("===== second schedule =======\n",module);
+    // module.dump();
+>>>>>>> dev_bizefeng
 
     Rewriter::change_double_buffer(doubleLoadFragA[0][0], smA);
     Rewriter::change_double_buffer(doubleLoadFragB[0][0], smB);

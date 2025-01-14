@@ -15,7 +15,13 @@ mlir::Value searchDescOp(mlir::ModuleOp module, std::string desc);
 
 std::vector<mlir::affine::AffineForOp> split(mlir::affine::AffineForOp forOp, uint64_t num_output, std::vector<int64_t> &&factors);
 
+<<<<<<< HEAD
 mlir::Value bufferizeLoopCarryVar(mlir::affine::AffineForOp &hasIterLoop, std::vector<mlir::affine::AffineForOp> &loops);
+=======
+std::vector<mlir::affine::AffineForOp> localSplitU(mlir::affine::AffineForOp forOp, uint64_t num_output);
+
+mlir::Value bufferizeLoopCarryVar(std::vector<mlir::affine::AffineForOp> &loops);
+>>>>>>> dev_bizefeng
 
 void reorder(const std::vector<mlir::affine::AffineForOp> &forOp);
 

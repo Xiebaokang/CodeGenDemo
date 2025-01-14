@@ -153,7 +153,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
     func::FuncDialect,memref::MemRefDialect,scf::SCFDialect,gpu::GPUDialect,
     arith::ArithDialect,cf::ControlFlowDialect,LLVM::LLVMDialect,ROCDL::ROCDLDialect
   >();
-  const char* llvmdialectfileName = "/home/xushilong/CodeGenDemo/ceshiData/kcg/testBadcase.mlir";
+  const char* llvmdialectfileName = "/home/bizefeng/CodeGenDemo/ceshiData/kcg/testBadcase.mlir";
   auto temp = mlir::parseSourceFile<ModuleOp>(llvmdialectfileName,&testContext);
   auto testmod = temp.get();
   std::string llvmIR = std::move(translateMLIRToLLVMIR(testmod, target, wavesPerEU));

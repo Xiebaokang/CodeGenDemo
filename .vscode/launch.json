@@ -12,7 +12,7 @@
             "console": "integratedTerminal",
             "env": {"PYTHONPATH":"${workspaceFolder}/Runtime/python"},
             "cwd": "${workspaceFolder}/Runtime/python/kcg",
-            "python": "/home/xushilong/anaconda3/envs/triton_rocm/bin/python"
+            "python": "/home/bizefeng/anaconda3/envs/triton_rocm/bin/python"
         },
         {
             "name": "(gdb) Launch",
