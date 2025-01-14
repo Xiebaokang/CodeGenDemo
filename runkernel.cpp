@@ -82,7 +82,7 @@ int main() {
 
     // 加载HSACO文件作为模块
     hipModule_t module;
-    hipModuleLoad(&module, "/tmp/kcg_kernel-941dd3/kcg_kernel-941dd3.hsaco");
+    hipModuleLoad(&module, "/tmp/kcg_kernel-abf9b8/kcg_kernel-abf9b8.hsaco");
 
     // 获取内核函数
     hipFunction_t kernel;
@@ -129,29 +129,32 @@ int main() {
     dim3 dimGrid = {(N + dimBlock.x - 1) / dimBlock.x, (M + dimBlock.y - 1) / dimBlock.y};
 
     std::vector<float> costs;
+    hipEvent_t startEvent, stopEvent;
+    hipEventCreate(&startEvent);
+    hipEventCreate(&stopEvent);
+    hipModuleLaunchKernel(kernel, 256, 1, 1, 256, 1, 1, 50000, 0, args, NULL); 
+    gemm_kernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_D, M, N, K);
+
     for (int i=0; i<10; i++) {
         // 执行内核函数
-        hipEvent_t startEvent, stopEvent;
-        hipEventCreate(&startEvent);
-        hipEventCreate(&stopEvent);
+        float elapsedTime = 0;
         hipEventRecord(startEvent, 0);
-
         hipModuleLaunchKernel(kernel, 256, 1, 1, 256, 1, 1, 50000, 0, args, NULL);  
-        gemm_kernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_D, M, N, K);
-
         hipEventRecord(stopEvent, 0);
         hipEventSynchronize(stopEvent);
 
-        float elapsedTime;
         hipEventElapsedTime(&elapsedTime, startEvent, stopEvent);
         costs.push_back(elapsedTime);
+        gemm_kernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_D, M, N, K);
     }
 
     hipDeviceSynchronize();
 
     std::sort(costs.begin(), costs.end());
+    for(auto num : costs) std::cout << num << " ";
+    std::cout << std::endl;
     float time = costs[costs.size()/2];
-    double tflops = (2 * static_cast<uint64_t>(M) * N * K) / (time / 1000) / 1e12;
+    double tflops = (double)(2 * (M / 10000.0) * (N / 10000.0) * (K / 10000.0)) / (time / 1000);
 
     hipMemcpy(C, d_C, M * N * sizeof(float), hipMemcpyDeviceToHost);
     std::cout << "time cost: " << time << "ms\n";
