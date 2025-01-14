@@ -98,7 +98,11 @@ mlir::AffineExpr getOrderExpr(mlir::OpBuilder builder, int dimCount);
 
 mlir::AffineExpr shiftAffineExprDim(mlir::MLIRContext* context, mlir::AffineExpr expr, int shift);
 
+mlir::AffineMap addDimToMap(mlir::OpBuilder builder, mlir::AffineMap oldMap);
+
 mlir::AffineExpr getModifiedExpr(mlir::MLIRContext* context, mlir::AffineExpr inExpr, mlir::AffineExpr replaceExpr, int targetDim, int replaceNumberDims);
+
+mlir::AffineMap mapDimToConstant(mlir::OpBuilder builder, mlir::AffineMap map, int targat, int constant);
 
 template <typename AffineMemoryOp>
 int replaceIndexWithExpr(mlir::Value oldIv, std::vector<mlir::Value>& newIvs, AffineMemoryOp memOp, mlir::AffineExpr replaceExpr,

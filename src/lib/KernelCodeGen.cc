@@ -46,8 +46,8 @@ bool transforms(mlir::ModuleOp& mod, mlir::MLIRContext& context, const std::stri
 #endif
   pm.addPass(ReplaceAllocToGetglobalPass());
 #if FLAG
-  pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开，展开次数和性能有很大关系
-  pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());   // if的简化
+  // pm.addPass(createAffineFullUnrollPass());                      // 对打了unroll属性的affine loop进行循环展开，展开次数和性能有很大关系
+  // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());   // if的简化
 #endif
   pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createAffineLoopInvariantCodeMotionPass());   // 循环不变量移动
   // pm.addNestedPass<mlir::func::FuncOp>(mlir::affine::createSimplifyAffineStructuresPass());  // 加入后会导致shm conflict 增加
@@ -95,7 +95,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   // pm.addPass(mlir::createConvertVectorToLLVMPass());                       // vector -> llvm
 
   FinalizeMemRefToLLVMConversionPassOptions memrefOptions;
-  memrefOptions.indexBitwidth = INDEX_BIT_WIDTH;                                           // 这个32会将malloc func的参数也定义为i32，以及将ptrtointOp的返回也是i32，llvm malloc func不支持i32
+  memrefOptions.indexBitwidth = INDEX_BIT_WIDTH;                              // 这个32会将malloc func的参数也定义为i32，以及将ptrtointOp的返回也是i32，llvm malloc func不支持i32
   // memrefOptions.useAlignedAlloc = true;                                    // 这个如果不开启的话，且上为i32，则llir转换失败，解决使用pass - createMallocFuncOpArgTypeI32ToI64Pass
   pm.addPass(mlir::createFinalizeMemRefToLLVMConversionPass(memrefOptions));  // memref -> llvm
 
@@ -104,7 +104,7 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
   pm.addPass(mlir::createSymbolDCEPass());
 
   ConvertFuncToLLVMPassOptions funcOptions;                                 // passes.h.inc文件中有通过tablegen生成的pass base类型 以及createxxx()
-  funcOptions.indexBitwidth = INDEX_BIT_WIDTH;                                           // func loewring 到 llvm 时，其index转到llvm上是使用i32类型
+  funcOptions.indexBitwidth = INDEX_BIT_WIDTH;                              // func loewring 到 llvm 时，其index转到llvm上是使用i32类型
   funcOptions.useBarePtrCallConv = true;                                    // 使用裸指针，而不使用结构体指针表示memref类型
   pm.addPass(mlir::createConvertFuncToLLVMPass(funcOptions));               // func -> llvm
   // pm.addPass(createEraseRedundantUnCCastPass());                         // 手动写的去除多余UnrealizedCast

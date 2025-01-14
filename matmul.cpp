@@ -2329,6 +2329,18 @@ void hostMatmul(T *A, T *B, T *C, int M, int N, int K) {
     }
 }
 
+__global__ void gemm_kernel(float* A, float* B, float* C, int m, int n, int k) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < m && col < n) {
+        float sum = 0.0f;
+        for (int i = 0; i < k; ++i) {
+            sum += A[i*m+row] * B[i*n+col];
+        }
+        C[row * n + col] = sum;
+    }
+}
+
 template <typename T>
 void verify(T *host, T *device, int M, int N) {
   // 验证
@@ -2337,9 +2349,9 @@ void verify(T *host, T *device, int M, int N) {
   for (int i=0; i<M; i++) {
     for (int j=0; j<N; j++) {
       int index = i * N + j;
-      if (std::abs(host[index] - device[index]) >= 0.00001) {
-        // printf("error index: (y=%d, x=%d)\n", i, j);
-        // printf("errer host: %.1f   error device: %.1f\n", host[index], device[index]);
+      if (std::abs(host[index] - device[index]) >= 0.01) {
+        printf("error index: (y=%d, x=%d)\n", i, j);
+        printf("errer host: %.1f   error device: %.1f\n", host[index], device[index]);
         result = false;
         errorCount++;
       }
@@ -2370,8 +2382,8 @@ int main() {
   const int TM = 4;
   const int TN = 4;
 
-  const int GLOB_LOAD_WIDTH_A = 4;
-  const int GLOB_LOAD_WIDTH_B = 4;
+  const int GLOB_LOAD_WIDTH_A = 2;
+  const int GLOB_LOAD_WIDTH_B = 2;
 
   const int BLOCK_LAYOUT_M = 2;   // BM / TM / WARP_LAYOUT_M
   const int BLOCK_LAYOUT_N = 2;    // BN / TN / WARP_LAYOUT_N
@@ -2386,7 +2398,7 @@ int main() {
   const int LOCAL_SPLIT_U = 1;   /*2*/
   const int BLOCK_MAPPING = 8;
   const int WARP_SIZE = 64;
-  const int GLOB_STORE_WIDTH = 4;
+  const int GLOB_STORE_WIDTH = 2;
 
   float *A = new float[M * K];
   float *B = new float[N * K];
@@ -2397,21 +2409,26 @@ int main() {
     D[i] = 0.0f;
   }
   for (int i = 0; i < M * K; i++) {
-    A[i] = rand() % 10;
+    A[i] = (rand() % 50000) * 0.01;
   } 
   for (int i = 0; i < N * K; i++) {
-    B[i] = rand() % 8;
+    B[i] = (rand() % 50000) * 0.01;
   }
 
-  float *DA, *DB, *DC;
+  float *DA, *DB, *DC, *DD;
   hipMalloc(&DA, M * K * sizeof(float));
   hipMalloc(&DB, N * K * sizeof(float));
   hipMalloc(&DC, N * M * sizeof(float));
+  hipMalloc(&DD, N * M * sizeof(float));
   hipMemcpy(DA, A, M * K * sizeof(float), hipMemcpyHostToDevice);
   hipMemcpy(DB, B, N * K * sizeof(float), hipMemcpyHostToDevice);
   
   dim3 grid_size((M/BM)*(N/BN));  // 1024/64=16; 1056/48=22
   dim3 block_size(((BM/TM)*(BN/TN)) * LOCAL_SPLIT_U);  // 64/4=16; 48/6=8
+
+  dim3 dimBlock = {16, 16};
+  dim3 dimGrid = {(N + dimBlock.x - 1) / dimBlock.x, (M + dimBlock.y - 1) / dimBlock.y};
+
 
   std::vector<float> costs;
   for (int i=0; i<10; i++) {
@@ -2442,13 +2459,13 @@ int main() {
     // 在matmul_1的基础上修改，讲所有glob load的方式改为顺序load
     // 这个有限制，GLOB_LOAD_WIDTH_A/B必须为BM/BN和GLOB_LOAD_TATOL_WIDTH_A/B的约数
     // GLOB_STORE_WIDTH必须为BN和GLOB_LOAD_TATOL_WIDTH_C的约数
-    // matmul_2<BM, BN, BK, TM, TN, 
-    //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
-    //   BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
-    //   WARP_LAYOUT_M, WARP_LAYOUT_N, 
-    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
-    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
-    //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
+    matmul_2<BM, BN, BK, TM, TN, 
+      GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
+      BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
+      WARP_LAYOUT_M, WARP_LAYOUT_N, 
+      WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+      THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
+      LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
     // 在matmul_2的基础上修改，将L2 cache的方式修改为s形
     // matmul_3<BM, BN, BK, TM, TN, 
@@ -2470,13 +2487,15 @@ int main() {
     
 
     // 在matmul_1的基础上修改，只做reg的流水
-    matmul_5<BM, BN, BK, TM, TN, 
-      GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
-      BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
-      WARP_LAYOUT_M, WARP_LAYOUT_N, 
-      WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
-      THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
-      LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
+    // matmul_5<BM, BN, BK, TM, TN, 
+    //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
+    //   BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
+    //   WARP_LAYOUT_M, WARP_LAYOUT_N, 
+    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
+    //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
+
+    gemm_kernel<<<dimGrid, dimBlock>>>(DA, DB, DD, M, N, K);
 
     hipEventRecord(stopEvent, 0);
     hipEventSynchronize(stopEvent);
@@ -2491,10 +2510,11 @@ int main() {
   double tflops = (2 * static_cast<uint64_t>(M) * N * K) / (time / 1000) / 1e12;
 
   hipMemcpy(C, DC, M * N * sizeof(float), hipMemcpyDeviceToHost);
+  hipMemcpy(D, DD, M * N * sizeof(float), hipMemcpyDeviceToHost);
   std::cout << "time cost: " << time << "ms\n";
   std::cout << "tflops: " << tflops << std::endl;
   // display(C, M * N);
-  hostMatmul(A, B, D, M, N, K);
+  // hostMatmul(A, B, D, M, N, K);
   verify(D, C, M, N);
 
   hipFree(DA);

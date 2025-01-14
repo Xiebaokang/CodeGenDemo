@@ -103,6 +103,21 @@ mlir::AffineExpr shiftAffineExprDim(mlir::MLIRContext* context, mlir::AffineExpr
   }
 }
 
+mlir::AffineMap addDimToMap(mlir::OpBuilder builder, mlir::AffineMap oldMap) {
+  // d0 + d1 -> d0 + d1 + d2
+  auto oldExprs = oldMap.getResults();
+  mlir::SmallVector<mlir::AffineExpr> newExprs;
+  for (int i=0; i<oldExprs.size(); i++) {
+    if (i != oldExprs.size() - 1) {
+      newExprs.push_back(oldExprs[i]);
+    } else {
+      auto dim = builder.getAffineDimExpr(oldMap.getNumDims());
+      newExprs.push_back(oldExprs[i] + dim);
+    }
+  }
+  return mlir::AffineMap::get(oldMap.getNumDims() + 1, 0, llvm::ArrayRef<mlir::AffineExpr>(newExprs), builder.getContext());
+}
+
 mlir::AffineExpr getModifiedExpr(mlir::MLIRContext* context, mlir::AffineExpr inExpr, mlir::AffineExpr replaceExpr, int targetDim, int replaceNumberDims) {
   // d0 + d1 + d2  =>  target==1 & replace==[d1 + d2 + d3] =>  d0 + [d1 + d2 + d3] + d4
   if (auto dimExpr_ = inExpr.dyn_cast<mlir::AffineDimExpr>()) {
@@ -123,6 +138,18 @@ mlir::AffineExpr getModifiedExpr(mlir::MLIRContext* context, mlir::AffineExpr in
     assert(constExpr_);
     return constExpr_;
   }
+}
+
+mlir::AffineMap mapDimToConstant(mlir::OpBuilder builder, mlir::AffineMap map, int targat, int constant) {
+  // {d1, d0 + d1 + d2, d2} & target==1 & replace==0  => {0, d0 + 0 + d1, d2}
+  mlir::MLIRContext* context = builder.getContext();
+  auto oldExprs = map.getResults();
+  mlir::SmallVector<mlir::AffineExpr> exprs;
+  auto constantExpr = builder.getAffineConstantExpr(constant);
+  for (auto expr : oldExprs) {
+    exprs.push_back(getModifiedExpr(context, expr, constantExpr, targat, 0));
+  }
+  return mlir::AffineMap::get(map.getNumDims()-1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), context);
 }
 
 std::vector<int64_t> getOptVectorizeGroup(int64_t width) {
@@ -146,8 +173,8 @@ std::vector<int64_t> getOptVectorizeGroup(int64_t width) {
 mlir::affine::AffineForOp shiftBufferDatas(mlir::OpBuilder builder, mlir::Value src, mlir::Value dst, mlir::AffineMap srcMap, mlir::AffineMap dstMap, 
                                           llvm::SmallVector<mlir::Value> srcOperands, llvm::SmallVector<mlir::Value> dstOperands, 
                                           int64_t loadWidth, std:: vector<int> times) {
+  // src -> dst  by  srcmap & dstmap
   auto srcNumDims = srcMap.getNumDims();
-  // auto group = getOptVectorizeGroup(loadWidth);
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
   mlir::Value ld;
   int nestedNum = 0;
@@ -189,5 +216,6 @@ mlir::affine::AffineForOp shiftBufferDatas(mlir::OpBuilder builder, mlir::Value 
   }
   return mlir::dyn_cast<mlir::affine::AffineForOp>(cur);
 }
+
 
 }

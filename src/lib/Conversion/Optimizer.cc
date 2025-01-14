@@ -60,7 +60,7 @@ void test(mlir::AffineMap map) {
   LOG_DEBUG("",map);
 }
 
-mlir::AffineMap MatmulOptimizer::getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto by = builder.getAffineDimExpr(dimCount++);
   auto tid = builder.getAffineDimExpr(dimCount++);
@@ -76,7 +76,7 @@ mlir::AffineMap MatmulOptimizer::getGlobToTempMapA(mlir::OpBuilder& builder, con
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
 }
 
-mlir::AffineMap MatmulOptimizer::getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto bx = builder.getAffineDimExpr(dimCount++);
   auto tid = builder.getAffineDimExpr(dimCount++);
@@ -93,7 +93,7 @@ mlir::AffineMap MatmulOptimizer::getGlobToTempMapB(mlir::OpBuilder& builder, con
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext());
 }
 
-mlir::AffineMap MatmulOptimizer::getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto tid = builder.getAffineDimExpr(dimCount++);
   auto iter = builder.getAffineDimExpr(dimCount++);
@@ -106,7 +106,7 @@ mlir::AffineMap MatmulOptimizer::getTempToSharedMapSMA(mlir::OpBuilder& builder,
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext()); 
 }
 
-mlir::AffineMap MatmulOptimizer::getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto tid = builder.getAffineDimExpr(dimCount++);
   auto iter = builder.getAffineDimExpr(dimCount++);
@@ -209,7 +209,7 @@ mlir::AffineMap MatmulOptimizer::getRegToSharedMapSMC(mlir::OpBuilder& builder, 
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext()); 
 }
 
-mlir::AffineMap MatmulOptimizer::getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto tid = builder.getAffineDimExpr(dimCount++);
   auto iterSplitU = builder.getAffineDimExpr(dimCount++);
@@ -223,7 +223,7 @@ mlir::AffineMap MatmulOptimizer::getReduceMapSMC(mlir::OpBuilder& builder, const
   return mlir::AffineMap::get(dimCount, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), builder.getContext()); 
 }
 
-mlir::AffineMap MatmulOptimizer::getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config) {
+mlir::AffineMap MatmulOptimizer::getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous) {
   int dimCount = 0;
   auto by = builder.getAffineDimExpr(dimCount++);
   auto bx = builder.getAffineDimExpr(dimCount++);
@@ -358,11 +358,12 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
       auto reduceCMap = getReduceMapSMC(builder, config);
       test(reduceCMap);
       auto reduceCLoop = Rewriter::splitUReduce(smC, regC_, reduceCMap, {threadIdx[0]}, config["LOCAL_SPLIT_U"], config["GLOB_STORE_WIDTH"], m_inner_0, Position::after);
+      auto reduceLoop_0 = reduceCLoop.first, reduceLoop_1 = reduceCLoop.second;
       LOG_DEBUG("===== load splitUReduce =======\n",module);
 
       auto writeCMap = getReduceMapRegC(builder, config);
       test(writeCMap);
-      Rewriter::splitUWrite(regC_, C, writeCMap, {blockIdx[0], blockIdx[1], threadIdx[0]}, config["LOCAL_SPLIT_U"], config["GLOB_STORE_WIDTH"], reduceCLoop, Position::after);
+      Rewriter::splitUWrite(regC_, C, writeCMap, {blockIdx[0], blockIdx[1], threadIdx[0]}, config["LOCAL_SPLIT_U"], config["GLOB_STORE_WIDTH"], reduceLoop_1, Position::after);
       auto StoreBarrier = Rewriter::barrier(m_inner_0, Position::after);
       LOG_DEBUG("===== load write to C =======\n",module);
 
@@ -384,9 +385,9 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     LOG_DEBUG("===== vectorize =======\n",module);
     
     int gridDims = 0;
-    // Rewriter::parallelToOneDim(gridLevel, &gridDims);
-    // tools::opSetAttr(module,AttrGridDim,gridDims);
-    Rewriter::BlockMapping(gridLevel, config["BLOCK_MAPPING"]);
+    Rewriter::parallelToOneDim(gridLevel, &gridDims);
+    tools::opSetAttr(module,AttrGridDim,gridDims);
+    // Rewriter::BlockMapping(gridLevel, config["BLOCK_MAPPING"]);
     LOG_DEBUG("===== parallelToOneDim gridLevel =======\n",module);
     
     // module.dump();

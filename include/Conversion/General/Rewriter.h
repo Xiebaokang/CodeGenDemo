@@ -96,8 +96,9 @@ mlir::gpu::BarrierOp barrier(mlir::affine::AffineForOp compute_at, Position pos)
 
 mlir::affine::AffineForOp vectorize(mlir::affine::AffineForOp readOrWrite, int64_t width);
 
-mlir::affine::AffineForOp splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
-                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);
+std::pair<mlir::affine::AffineForOp, mlir::affine::AffineForOp> 
+splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
+               int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);
 
 mlir::affine::AffineForOp splitUWrite(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos);

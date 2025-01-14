@@ -50,17 +50,17 @@ struct MatmulOptimizer : Optimizer {
   virtual void applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) override;
 
   // mlir::AffineMap getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config);
-  mlir::AffineMap getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
   mlir::AffineMap getSharedToRegMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getSharedToRegMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getCalculateMapReg(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getRegToGlobMapC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getRegToSharedMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
 
   void clear() {
     matmuls.clear();

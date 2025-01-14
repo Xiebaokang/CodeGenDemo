@@ -316,50 +316,6 @@ void reorder(const std::vector<mlir::affine::AffineForOp>& loops) {
   } while (swapped);
 }
 
-// op in forOps must be perfect nested loops.
-// mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp>& forOps) {
-//   // X, Y, Z
-//   assert(forOps.size() <= 3);
-//   llvm::SmallVector<mlir::AffineMap> lbMaps;
-//   llvm::SmallVector<mlir::AffineMap> upMaps;
-//   llvm::SmallVector<mlir::Value> lbOperands;
-//   llvm::SmallVector<mlir::Value> upOperands;
-//   llvm::SmallVector<int64_t> steps;
-
-//   for (auto forOp : forOps) {
-//     lbMaps.push_back(forOp.getLowerBoundMap());
-//     upMaps.push_back(forOp.getUpperBoundMap());
-//     lbOperands.append(forOp.getLowerBoundOperands().begin(), forOp.getLowerBoundOperands().end());
-//     upOperands.append(forOp.getUpperBoundOperands().begin(), forOp.getUpperBoundOperands().end());
-//     steps.push_back(forOp.getStep().getLimitedValue());
-//   }
-
-//   mlir::OpBuilder builder(forOps[0]);
-//   mlir::affine::AffineParallelOp parallelOp = builder.create<mlir::affine::AffineParallelOp>(
-//     builder.getUnknownLoc(), mlir::TypeRange(), llvm::ArrayRef<mlir::arith::AtomicRMWKind>(),
-//     llvm::ArrayRef<mlir::AffineMap>(lbMaps), lbOperands,
-//     llvm::ArrayRef<mlir::AffineMap>(upMaps), upOperands,
-//     llvm::ArrayRef<int64_t>(steps));
-
-//   // erase the yield op of innermost loop
-//   auto innermost = forOps.back();
-//   innermost.getBody()->back().erase();
-//   // move the body of innermost loop to the begin of move
-//   parallelOp.getBody()->getOperations().splice(parallelOp.getBody()->begin(),
-//     innermost.getBody()->getOperations());
-
-//   auto newIvs = parallelOp.getIVs();
-//   int count = newIvs.size() - 1;
-
-//   for (auto iter = forOps.rbegin(); iter != forOps.rend(); ++iter) {
-//     auto forOp = *iter;
-//     forOp.getInductionVar().replaceAllUsesWith(newIvs[count--]);
-//     forOp.erase();
-//   }
-//   // make the lowerbound to 0 and step to 1
-//   mlir::affine::normalizeAffineParallel(parallelOp);
-//   return parallelOp;
-// }
 mlir::affine::AffineParallelOp parallel(const std::vector<mlir::affine::AffineForOp>& forOps) {
   // X, Y, Z
   assert(forOps.size() <= 3);
@@ -639,78 +595,55 @@ mlir::affine::AffineForOp vectorize(mlir::affine::AffineForOp readOrWrite, int64
   return readOrWrite;
 }
 
-mlir::affine::AffineForOp splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
-                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos) {
+std::pair<mlir::affine::AffineForOp, mlir::affine::AffineForOp> 
+splitUReduce(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands,
+               int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos) {
   // splitU!=1时，插入将多层结果进行累加求和的结构
   auto builder = getBuilder(compute_at, pos);
   auto dstType = dst.getType().dyn_cast<mlir::MemRefType>();
-  int64_t regCTotalWidth = dstType.getShape()[0];   // 24
-  int64_t globStoreTotalWidth = regCTotalWidth / localSplitU;  // 12
-  int64_t globStoreNum = globStoreTotalWidth / globStoreWidth;  // 6
+  int64_t regCTotalWidth = dstType.getShape()[0];   // 16
+  int64_t globStoreTotalWidth = regCTotalWidth / localSplitU;  // 8
+  int64_t globStoreNum = globStoreTotalWidth / globStoreWidth;  // 4
 
   auto dim0 = builder.getAffineDimExpr(0);
   auto dim1 = builder.getAffineDimExpr(1);
-  auto dstExpr = dim0 * globStoreTotalWidth + dim1 * globStoreWidth;
+  auto dstExpr = dim0 * globStoreWidth;
   auto reduceExpr = dim0 * globStoreWidth + dim1;
-  auto dstMap = mlir::AffineMap::get(2, 0, llvm::ArrayRef<mlir::AffineExpr>(dstExpr), builder.getContext());
+  auto dstMap = mlir::AffineMap::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(dstExpr), builder.getContext());
   auto reduceMap = mlir::AffineMap::get(2, 0, llvm::ArrayRef<mlir::AffineExpr>(reduceExpr), builder.getContext());
 
-  auto oldExprs = map.getResults();
-  mlir::SmallVector<mlir::AffineExpr> newExprs;
-  for (int i=0; i<oldExprs.size(); i++) {
-    if (i != oldExprs.size() - 1) {
-      newExprs.push_back(oldExprs[i]);
-    } else {
-      auto dim = builder.getAffineDimExpr(map.getNumDims());
-      newExprs.push_back(oldExprs[i] + dim);
-    }
-  }
-  auto newSrcMap = mlir::AffineMap::get(map.getNumDims() + 1, 0, llvm::ArrayRef<mlir::AffineExpr>(newExprs), builder.getContext());
-
-  llvm::SmallVector<mlir::AffineExpr> exprs;
-  llvm::SmallVector<bool> eqFlags;
-  exprs.push_back(dim0);
-  eqFlags.push_back(true);
-  auto cst = mlir::IntegerSet::get(1, 0, llvm::ArrayRef<mlir::AffineExpr>(exprs), llvm::ArrayRef<bool>(eqFlags));
-
-  auto outerBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv, mlir::ValueRange iterArgs) {
-    // *** outer ***
-    mlir::OpBuilder::InsertionGuard nestedGuard(b);
-    operands.push_back(iv);
-    auto innerBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv_inner, mlir::ValueRange iterArgs) {
-      // *** inner ***
-      mlir::OpBuilder::InsertionGuard nestedGuard(b);
-      operands.push_back(iv_inner);
-      // *** ifop ***
-      auto ifOp = b.create<mlir::affine::AffineIfOp>(b.getUnknownLoc(), cst, mlir::ValueRange{iv}, /*withElseRegion=*/true);
-      b.setInsertionPointToStart(ifOp.getThenBlock());
-      llvm::SmallVector<mlir::Value> dstOperands{iv, iv_inner};
-      auto vectorType = mlir::VectorType::get(globStoreWidth, dstType.getElementType());
-      auto ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, map, operands);
-      b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, dstOperands);
-      b.setInsertionPointToStart(ifOp.getElseBlock());
-      auto reduceBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv_reduce, mlir::ValueRange iterArgs) {
-        // *** reduce ***
-        mlir::OpBuilder::InsertionGuard nestedGuard(b);
-        operands.push_back(iv_reduce);
-        llvm::SmallVector<mlir::Value> reduceOperands{iv_inner, iv_reduce};
-        auto loadRegC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), dst, reduceMap, reduceOperands);
-        auto loadShC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), src, newSrcMap, operands);
-        auto addOp = b.create<mlir::arith::AddFOp>(b.getUnknownLoc(), loadRegC, loadShC);
-        b.create<mlir::affine::AffineStoreOp>(b.getUnknownLoc(), addOp, dst, reduceMap, reduceOperands);
-        b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
-      };
-      builder.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, globStoreWidth, 1, mlir::ValueRange({}), reduceBody);
-
-      b.setInsertionPointAfter(ifOp);
-      b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
-    };
-    builder.create<mlir::affine::AffineForOp>(b.getUnknownLoc(), 0, globStoreNum, 1, mlir::ValueRange({}), innerBody);
+  auto oneMap = mapDimToConstant(builder, map, /*target*/1, /*constant*/0);
+  llvm::SmallVector<mlir::Value> oneLoopSrcOperands(operands.begin(), operands.end());
+  auto oneLoopBody = [&](mlir::OpBuilder &b, mlir::Location loc, mlir::Value iv, mlir::ValueRange iterArgs) {
+    oneLoopSrcOperands.push_back(iv);
+    llvm::SmallVector<mlir::Value> oneLoopDstOperands{iv};
+    auto vectorType = mlir::VectorType::get(globStoreWidth, dstType.getElementType());
+    auto ld = b.create<mlir::affine::AffineVectorLoadOp>(b.getUnknownLoc(), vectorType, src, oneMap, oneLoopSrcOperands);
+    b.create<mlir::affine::AffineVectorStoreOp>(b.getUnknownLoc(), ld, dst, dstMap, oneLoopDstOperands);
     b.create<mlir::affine::AffineYieldOp>(b.getUnknownLoc());
   };
-  auto reduce = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, localSplitU, 1, mlir::ValueRange({}), outerBody);
-  return reduce;
+  auto oneLoop = builder.create<mlir::affine::AffineForOp>(builder.getUnknownLoc(), 0, globStoreNum, 1, mlir::ValueRange({}), oneLoopBody);
+
+  auto newMap = addDimToMap(builder, map);
+  llvm::SmallVector<mlir::Value> twoLoopSrcOperands(operands.begin(), operands.end());
+  mlir::SmallVector<int64_t, 2> upperBounds{localSplitU, globStoreNum, globStoreWidth};
+  mlir::SmallVector<int64_t, 2> steps(3, /*Value=*/1);
+  mlir::SmallVector<int64_t, 2> lowerBounds{1, 0, 0};
+  mlir::affine::buildAffineLoopNest(builder, builder.getUnknownLoc(), lowerBounds, upperBounds, steps,
+    [&](mlir::OpBuilder &b, mlir::Location loc, mlir::ValueRange ivs) {
+      for (auto iv : ivs) {
+        twoLoopSrcOperands.push_back(iv);
+      }
+      llvm::SmallVector<mlir::Value> reduceOperands{ivs[1], ivs[2]};
+      auto loadRegC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), dst, reduceMap, reduceOperands);
+      auto loadShC = b.create<mlir::affine::AffineLoadOp>(b.getUnknownLoc(), src, newMap, twoLoopSrcOperands);
+      auto addOp = b.create<mlir::arith::AddFOp>(b.getUnknownLoc(), loadRegC, loadShC);
+      b.create<mlir::affine::AffineStoreOp>(b.getUnknownLoc(), addOp, dst, reduceMap, reduceOperands);
+    });
+  
+  return std::make_pair(oneLoop, mlir::dyn_cast<mlir::affine::AffineForOp>(oneLoop->getNextNode()));
 }
+
 
 mlir::affine::AffineForOp splitUWrite(mlir::Value src, mlir::Value dst, mlir::AffineMap map, llvm::SmallVector<mlir::Value> operands, 
                                       int localSplitU, int64_t globStoreWidth, mlir::affine::AffineForOp compute_at, Position pos) {
