@@ -155,8 +155,8 @@ struct NVVMMetadata {
 #define AttrRootFunc      "kcg.rootfunc"
 #define AttrKernelType    "kcg.kerneltype"
 #define AttrDescription   "kcg.desc"
-#define AttrGridDim       "kcg.gridDim"
-#define AttrBlockDim      "kcg.blockDim"
+#define AttrGridDim       "func.grid.dim"
+#define AttrBlockDim      "func.block.dim"
 
 #define SHM_VAR_NAME(i) (std::string("kcg_shm")+std::to_string(i))
 
@@ -216,6 +216,7 @@ namespace tools {
   void opSetAttr(mlir::Operation* op, const std::string& name, int val);
   bool isOpAttrEqualToString(mlir::Operation* op, const std::string& name, const std::string& expectedvalue);
   uint64_t getIntAttr(mlir::Operation* op, const std::string& name);
+  std::vector<int> getIntArrayAttr(mlir::Operation* op, const std::string& name);
   /* ******** for debug use *************** */
   void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
 

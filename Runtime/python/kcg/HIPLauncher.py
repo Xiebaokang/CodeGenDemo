@@ -30,11 +30,15 @@ def make_stub(kernelLibFile : KernelLibFile) -> str :
     so_name = f"{so_cache_key + kernelLibFile.m_kernelFuncName}.so"
     # retrieve stub from cache if it exists
     cache_path = so_cache_manager.get_file(so_name)
+    cache_path = None
     if cache_path is None:
         with tempfile.TemporaryDirectory() as tmpdir:
             src = generate_launcher_hip(kernelLibFile)
             src_path = os.path.join(tmpdir, "main.c")
             with open(src_path, "w") as f:
+                for line in src:
+                    f.write(line)  # generate stub code
+            with open('/home/xushilong/CodeGenDemo/tempstub.c', "w") as f:
                 for line in src:
                     f.write(line)  # generate stub code
             so = build(so_name, src_path, tmpdir)
@@ -114,7 +118,7 @@ static inline void gpuAssert(hipError_t code, const char *file, int line)
 {{
    if (code != HIP_SUCCESS)
    {{
-      const char* prefix = "Triton Error [HIP]: ";
+      const char* prefix = "KCG Error [HIP]: ";
       const char* str = hipGetErrorString(code);
       char err[1024] = {{0}};
       snprintf(err, 1024, "%s Code: %d, Messsage: %s", prefix, code, str );
@@ -199,7 +203,18 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   if(!PyArg_ParseTuple(args, \"{format}\", &gridX, &gridY, &gridZ, &blockX,&blockY,&blockZ, &num_ctas, &clusterDimX, &clusterDimY, &clusterDimZ, &shared_memory, &_stream, &_function, &launch_enter_hook, &launch_exit_hook, &compiled_kernel{', ' + ', '.join(f"&_arg{i}" for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''})) {{
     return NULL;
   }}
-
+  printf("hiplauncher parsed : \\n");
+  printf("- gridX : %d \\n",gridX);
+  printf("- gridY : %d \\n",gridY);
+  printf("- gridZ : %d \\n",gridZ);
+  printf("- blockX : %d \\n",blockX);
+  printf("- blockY : %d \\n",blockY);
+  printf("- blockZ : %d \\n",blockZ);
+  printf("- num_ctas : %d \\n",num_ctas);
+  printf("- clusterDimX : %d \\n",clusterDimX);
+  printf("- clusterDimY : %d \\n",clusterDimY);
+  printf("- clusterDimZ : %d \\n",clusterDimZ);
+  printf("- shared_memory : %d \\n",shared_memory);
   if (launch_enter_hook != Py_None) {{
     PyObject_CallObject(launch_enter_hook, args);
   }}
@@ -208,6 +223,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0] == "*" else "" for i, ty in kernelSignature.items()])};
   Py_BEGIN_ALLOW_THREADS;
+  printf("- call _launch function \\n");
   _launch(gridX, gridY, gridZ, blockX, blockY, blockZ, num_ctas, clusterDimX, clusterDimY, clusterDimZ, shared_memory, (hipStream_t)_stream, (hipFunction_t)_function{', ' + ', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}"for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''});
   Py_END_ALLOW_THREADS;
 
@@ -273,7 +289,7 @@ class HIPLauncher :
             self.m_cWrapper = getattr(mod, "launch")
         return self.m_cWrapper
 
-    def launchKernel(self,*args,**kwargs):
+    def launchKernel(self,*args):
         wrapper = self._getWrapper()
         stream = DeviceInfo.get_cuda_stream()
         if wrapper is None:
@@ -284,7 +300,7 @@ class HIPLauncher :
         enterHookFunc = None
         exitHookFunc = None
         numCTAs = gridDims[0]*gridDims[1]*gridDims[2]
-        
+        print(f"[Runtime] gridDIms = {gridDims}, blockdims={blockDims} ")
         wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
                 # m.num_ctas,
                 numCTAs,

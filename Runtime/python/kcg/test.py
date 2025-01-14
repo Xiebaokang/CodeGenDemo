@@ -15,10 +15,7 @@ from kcg.KCGCompiler import KCGCompiler
 # import pymlir
 
 ############### User config ###############
-m_len=1024  # 16 blocks
-n_len=1056  # 16 blocks
-k_len=1024   # 8 blocks
-normal_case = False
+
 
 def case_normal_0(kp_matmul: KernelArgMatmul) :
     #   {KEY_BLOCK_SIZE_M, 64}, {KEY_BLOCK_SIZE_N, 48}, {KEY_BLOCK_SIZE_K, 32}, {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 6}, 
@@ -52,7 +49,49 @@ def case_normal_0(kp_matmul: KernelArgMatmul) :
     kp_matmul.WARP_SIZE = 64
     kp_matmul.GLOB_STORE_WIDTH = 2
     kp_matmul.isATranspose = 1
+    global m_len
+    global n_len
+    global k_len   
+    kp_matmul.M = 1024
+    kp_matmul.N = 1056
+    kp_matmul.K = 1024
+
+
+def case_normal_1(kp_matmul: KernelArgMatmul) :
+    #   {KEY_BLOCK_SIZE_M, 64}, {KEY_BLOCK_SIZE_N, 48}, {KEY_BLOCK_SIZE_K, 32}, {KEY_THREAD_SIZE_M, 4}, {KEY_THREAD_SIZE_N, 6}, 
+    #   {KEY_GLOB_LOAD_WIDTH_A, 2}, {KEY_GLOB_LOAD_WIDTH_B, 2}, 
+    #   {KEY_BLOCK_LAYOUT_M, 2}, {KEY_BLOCK_LAYOUT_N, 1}, {KEY_WARP_LAYOUT_M, 8}, {KEY_WARP_LAYOUT_N, 8},
+    #   {KEY_WARP_SCATTER_WIDTH_A, 2}, {KEY_WARP_SCATTER_WIDTH_B, 2}, {KEY_THREAD_SCATTER_WIDTH_A, 2}, {KEY_THREAD_SCATTER_WIDTH_B, 2}, 
+    #   {KEY_LOCAL_SPLIT_U, 2}, {KEY_BLOCK_MAPPING, 8}, {KEY_WARP_SIZE, 64}, {KEY_GLOB_STORE_WIDTH, 2}, 
+    #   {KEY_DTYPE_A, (int)KcgDtype::float32},
+    #   {KEY_DTYPE_B, (int)KcgDtype::float32},
+    #   {KEY_DTYPE_C, (int)KcgDtype::float32},
+    #   {KEY_M, 1024},{KEY_N, 1056},{KEY_K, 1024}, 
+    #   {KEY_IS_A_TRANSPOSE, 1}
     
+    kp_matmul.BLOCK_SIZE_M = 64
+    kp_matmul.BLOCK_SIZE_N = 64
+    kp_matmul.BLOCK_SIZE_K = 32
+    kp_matmul.THREAD_SIZE_M = 4
+    kp_matmul.THREAD_SIZE_N = 4
+    kp_matmul.GLOB_LOAD_WIDTH_A = 4
+    kp_matmul.GLOB_LOAD_WIDTH_B = 4
+    kp_matmul.BLOCK_LAYOUT_M = 4
+    kp_matmul.BLOCK_LAYOUT_N = 1
+    kp_matmul.WARP_LAYOUT_M = 4
+    kp_matmul.WARP_LAYOUT_N = 16
+    kp_matmul.WARP_SCATTER_WIDTH_A = 2
+    kp_matmul.WARP_SCATTER_WIDTH_B = 2
+    kp_matmul.THREAD_SCATTER_WIDTH_A = 2
+    kp_matmul.THREAD_SCATTER_WIDTH_B = 2
+    kp_matmul.LOCAL_SPLIT_U = 1
+    kp_matmul.BLOCK_MAPPING = 8
+    kp_matmul.WARP_SIZE = 64
+    kp_matmul.GLOB_STORE_WIDTH = 4
+    kp_matmul.isATranspose = 1
+    kp_matmul.M = 1024
+    kp_matmul.N = 1024
+    kp_matmul.K = 1024
 
 
 def case_bad_0(kp_matmul: KernelArgMatmul) :
@@ -70,18 +109,22 @@ def case_bad_0(kp_matmul: KernelArgMatmul) :
     kp_matmul.WARP_SIZE= 64
     kp_matmul.isATranspose = 0
 
+m_len=1024  # 16 blocks
+n_len=1024  # 16 blocks
+k_len=1024   # 8 blocks
 kp_matmul = KernelArgMatmul(m_len,n_len,k_len,
     EnumKernelDType.float32 ,
     EnumKernelDType.float32 ,
     EnumKernelDType.float32
     )
 
-case_normal_0(kp_matmul)
+case_normal_1(kp_matmul)
+# case_normal_0(kp_matmul)
 # case_bad_0(kp_matmul)
 
 def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
     abs_diff = torch.abs(tensor1 - tensor2)
-    rel_diff = abs_diff / (torch.abs(tensor1) + 1e-12)  # 避免除以零的情况
+    rel_diff = abs_diff / (torch.abs(tensor1) + 1e-5)  # 避免除以零的情况
 
     # 比较绝对误差和相对误差
     error_mask = (abs_diff > abs_error) & (rel_diff > rel_error)
@@ -92,7 +135,17 @@ def compare_with_error(tensor1, tensor2, abs_error=1e-2, rel_error=1e-2):
 def test_correctness(kpm : KernelArgMatmul):
     kernelCompiler = KCGCompiler()
     hsacoPath,kernelName,gridDimX,gridDimY,gridDimZ,blockDimX,blockDimY,blockDimZ = kernelCompiler.compileKernel(kpm)
-
+    
+    print("===== test info ========")
+    print("hsacoPath = ", hsacoPath)
+    print("kernelName = ", kernelName)
+    print("gridDimX = ", gridDimX)
+    print("gridDimY = ", gridDimY)
+    print("gridDimZ = ", gridDimZ)
+    print("blockDimX = ", blockDimX)
+    print("blockDimY = ", blockDimY)
+    print("blockDimZ = ", blockDimZ)    
+    
     print("========= hsacoPath = ",hsacoPath)
     print("========= kernelName = ",kernelName)
     ###  ====  DBG：使用外部mlir调试   
@@ -105,28 +158,41 @@ def test_correctness(kpm : KernelArgMatmul):
     inConfig.operatorKind = EnumOperator.Matmul
     packedKernel = CompiledKernelFactory.getKernel(inConfig)
     
-    a = torch.rand(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda')
-    b = torch.rand(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda')
-    c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
-    d = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda')
+    a = torch.randn(kpm.M,kpm.K,dtype=inConfig.kernelParam.dtypeTorch('A'),device='cuda:0')
+    b = torch.randn(kpm.K,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('B'),device='cuda:0')
+    c = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda:0')
+    d = torch.empty(kpm.M,kpm.N,dtype=inConfig.kernelParam.dtypeTorch('C'),device='cuda:0')
+    atrans = torch.transpose(a,1,0).contiguous()  # 转置会令底层存储不连续，导致失败。必须使其连续
+    assert(a.is_contiguous())
+    assert(b.is_contiguous())
+    assert(atrans.is_contiguous())
+    print(inConfig.kernelParam.dtypeTorch('A'))
+    print(inConfig.kernelParam.dtypeTorch('B'))
+    print(inConfig.kernelParam.dtypeTorch('C'))
     M, K = a.shape
     K, N = b.shape
-    atrans = torch.transpose(a,1,0)
+    print(f"python: M,N,K = {M},{N},{K}")
+    print("conti: a",a.is_contiguous())
+    print("conti: b",b.is_contiguous())
+    print("conti: atrans",atrans.is_contiguous())
     res = []
     start_event = torch.cuda.Event(enable_timing=True)
     end_event = torch.cuda.Event(enable_timing=True)
-    benchmarkCount = 10
+    benchmarkCount = 1
+    
     if kpm.isATranspose :
-        packedKernel.run(a,b,c) # warm up
+        print('transpose test')
+        # packedKernel.run(atrans,b,c) # warm up
         for i in range(0,benchmarkCount) : # benchmark
             start_event.record()
-            packedKernel.run(torch.t(a),b,c)
+            packedKernel.run(atrans,b,c)
             end_event.record()
             torch.cuda.synchronize()
             elapsed_time = start_event.elapsed_time(end_event)
             res.append(elapsed_time)
     else:
-        packedKernel.run(a,b,c) # warm up
+        print('normal test')
+        # packedKernel.run(a,b,c) # warm up
         for i in range(0,benchmarkCount) : # benchmark
             start_event.record()
             packedKernel.run(a,b,c)
@@ -141,8 +207,7 @@ def test_correctness(kpm : KernelArgMatmul):
     #         c.stride(0), c.stride(1),  
     #     )
     res1 = []
-    res1.clear()
-    torch.matmul(a,b) # warm up
+    # torch.matmul(a,b) # warm up
     for i in range(0,benchmarkCount) : # benchmark
         start_event.record()
         d = torch.matmul(a,b)
@@ -152,7 +217,8 @@ def test_correctness(kpm : KernelArgMatmul):
         res1.append(elapsed_time)
     print(f"rocblas median time: {np.median(res1)} ms")
     print(f"speed up: {np.median(res1)/np.median(res)}")
-    print(c)
+    print("c=",c)
+    print("d=",d)
     if torch.allclose(c,d,atol=1e-2,rtol=1e-2):
         print('test correct!')
     else:

@@ -101,6 +101,7 @@ mlir::func::FuncOp Matmul::createFunc(
   int64_t m = shape[0];
   int64_t n = shape[1];
   int64_t k = shape[2];
+  std::cout << "[D]createFunc: m=" << m << ";n=" << n << ";k=" << k << "isTransposeA=" << isTransposeA <<std::endl;
   std::vector<int64_t> shape_a;
   if(!isTransposeA){
    shape_a = std::vector<int64_t>{m, k};

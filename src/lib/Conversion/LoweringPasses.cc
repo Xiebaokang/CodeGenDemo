@@ -371,8 +371,12 @@ struct IdOpGPUToROCDLLowering : public OpRewritePattern<IdOp> {
 
     auto parentOp = idOp->getParentOp();
     auto funcOp = mlir::dyn_cast<func::FuncOp>(parentOp);
+    mlir::ModuleOp moduleOp = mlir::dyn_cast<mlir::ModuleOp>(funcOp->getParentOp());
     if (!boundsAttrName.empty() && funcOp) {
       if (auto attr = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr(boundsAttrName))) {
+        if(moduleOp){
+          moduleOp.getOperation()->setAttr(boundsAttrName, attr);
+        }
         int32_t maximum = attr[static_cast<uint32_t>(idOp.getDimension())];
         newOp.getDefiningOp()->setAttr("range", rewriter.getDenseI32ArrayAttr({0, maximum}));
       }
@@ -419,8 +423,10 @@ struct ParallelToROCDLPass : public PassWrapper<ParallelToROCDLPass, OperationPa
 
     patterns.add<GPUBarrierToROCDLLowering>(&getContext());
 
-    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns))))
+    if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))){
       return signalPassFailure();
+    }
+
   }
 };
 
@@ -439,6 +445,7 @@ struct ROCDLIdOpModifyPass : public PassWrapper<ROCDLIdOpModifyPass, OperationPa
       }
       auto blockDims = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.grid.dim"));
       auto threadDims = mlir::dyn_cast<DenseI32ArrayAttr>(funcOp->getAttr("func.block.dim"));
+
 
       funcOp.walk([&](Operation *op) {
         if (auto blockIdXOp = mlir::dyn_cast<ROCDL::BlockIdXOp>(op)) {

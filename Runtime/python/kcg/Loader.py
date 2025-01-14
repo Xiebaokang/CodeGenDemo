@@ -79,9 +79,11 @@ class HIPLoaderST(object):
                 src_path = os.path.join(tmpdir, "main.c")
                 with open(src_path, "w") as f:
                     f.write(src)
-                so = build("loader_hip", src_path, tmpdir)
-                with open(so, "rb") as f:
-                    cache_path = cache.put(f.read(), fname, binary=True)
+                # so = build("loader_hip", src_path, tmpdir)
+                cache_path = build("loader_hip", src_path, tmpdir)
+                
+                # with open(so, "rb") as f:
+                #     cache_path = cache.put(f.read(), fname, binary=True)
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("loader_hip", cache_path)

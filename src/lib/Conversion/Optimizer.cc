@@ -291,8 +291,8 @@ void MatmulOptimizer::applyOptimzer(mlir::ModuleOp& module, std::map<std::string
     int blockDimX = 0;
     int gridDimX = 0;
     Rewriter::parallelToOneDim(blockLevel,&blockDimX);
-    tools::opSetAttr(module,AttrGridDim, gridDimX);
-    tools::opSetAttr(module,AttrBlockDim, blockDimX);
+    // tools::opSetAttr(module,AttrGridDim, gridDimX);
+    // tools::opSetAttr(module,AttrBlockDim, blockDimX);
     LOG_DEBUG("===== before parallelToOneDim =======\n",module);
     
     auto blockIdx = Analyzer::getParallelIdx(gridLevel);

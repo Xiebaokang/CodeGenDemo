@@ -1,4 +1,5 @@
 #include "Common/Utils.h"
+#include "mlir/IR/BuiltinAttributes.h"
 
 namespace KernelCodeGen {
 
@@ -77,6 +78,18 @@ uint64_t getIntAttr(mlir::Operation* op, const std::string& name){
   if(op->hasAttr(name)){
     auto attr = mlir::dyn_cast<mlir::IntegerAttr>(op->getAttr(name));
     ret = attr.getValue().getLimitedValue();
+  }
+  return ret;
+}
+
+std::vector<int> getIntArrayAttr(mlir::Operation* op, const std::string& name){
+  assert(op != nullptr && "getAttr:nullptr error!");
+  std::vector<int> ret ;
+  if(op->hasAttr(name)){
+    auto attr = mlir::dyn_cast<mlir::DenseI32ArrayAttr>(op->getAttr(name));
+    for(const auto& e : attr.asArrayRef()) {
+      ret.push_back(e);
+    }
   }
   return ret;
 }

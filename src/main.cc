@@ -151,16 +151,16 @@ std::map<Config, KernelInfo> testConfigs(
   std::map<Config, KernelInfo> result;
   KernelCodeGenerator generator(Target::ROCm, "906");
   for (int i=0;i<configs.size();++i) {
-    auto config = configs[i];
+    const auto config = configs[i];
     const auto& name = kernelNames[i];
     KernelInfo info;
-    auto dtypeA = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_A]);
-    auto dtypeB = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_B]);
-    auto dtypeC = tools::KcgDtypeToStr((KcgDtype)config[KEY_DTYPE_C]);
-    auto M = config[KEY_M];
-    auto N = config[KEY_N];
-    auto K = config[KEY_K];
-    bool isATranspose = config[KEY_IS_A_TRANSPOSE] > 0;
+    auto dtypeA = tools::KcgDtypeToStr((KcgDtype)config.at(KEY_DTYPE_A));
+    auto dtypeB = tools::KcgDtypeToStr((KcgDtype)config.at(KEY_DTYPE_B));
+    auto dtypeC = tools::KcgDtypeToStr((KcgDtype)config.at(KEY_DTYPE_C));
+    auto M = config.at(KEY_M);
+    auto N = config.at(KEY_N);
+    auto K = config.at(KEY_K);
+    bool isATranspose = config.at(KEY_IS_A_TRANSPOSE)> 0;
 #if DBG_USE_EXTERN_MLIR
     MLIRContext ctx;
     ctx.loadDialect<mlir::affine::AffineDialect, 
@@ -197,10 +197,10 @@ std::map<Config, KernelInfo> testConfigs(
     std::cout << hsacoPath << "\n";
     info.m_hsacoPath = hsacoPath;
     info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();
-    auto gridDim = tools::getIntAttr(kernel,AttrGridDim);
-    auto blockDim = tools::getIntAttr(kernel,AttrBlockDim);
-    info.m_gridDims[0] = gridDim;
-    info.m_blockDims[0] = blockDim;
+    auto gridDim = tools::getIntArrayAttr(kernel,AttrGridDim);
+    auto blockDim = tools::getIntArrayAttr(kernel,AttrBlockDim);
+    info.m_gridDims[0] = gridDim[0];
+    info.m_blockDims[0] = blockDim[0];
     result[config] = info;
     std::cout << "==== kernel name : " << info.m_kernelName << "\n";
   }

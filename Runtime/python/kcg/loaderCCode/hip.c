@@ -9,7 +9,7 @@ static bool gpuAssert(hipError_t code, const char *file, int line) {
     if (code == HIP_SUCCESS)
         return true;
 
-    const char *prefix = "Triton Error [HIP]: ";
+    const char *prefix = "KCG Error[HIP]: ";
     const char *str = hipGetErrorString(code);
     char err[1024] = {0};
     snprintf(err, 1024, "%s Code: %d, Messsage: %s", prefix, code, str);
