@@ -13,6 +13,13 @@ namespace KernelCodeGen
     using Config = std::map<std::string, std::vector<std::map<std::string, int>>>;
   public:
     KernelCodeGenerator(Target target_, const std::string& arch_) : target(target_), arch(arch_) {
+      ;
+    }
+
+    KernelCodeGenerator(const KernelCodeGenerator& other);
+    
+    template <typename OperatorType, typename... Args> 
+    mlir::ModuleOp create(Args &&...args) {
       context.getOrLoadDialect<mlir::affine::AffineDialect>();
       context.getOrLoadDialect<mlir::memref::MemRefDialect>();
       context.getOrLoadDialect<mlir::func::FuncDialect>();
@@ -23,14 +30,7 @@ namespace KernelCodeGen
       context.getOrLoadDialect<mlir::math::MathDialect>();
       context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
       context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
-      mlir::registerAllPasses();
-    }
 
-    KernelCodeGenerator() = delete;
-
-    
-    template <typename OperatorType, typename... Args> 
-    mlir::ModuleOp create(Args &&...args) {
       mlir::OpBuilder builder(&context);
       mlir::ModuleOp module = mlir::ModuleOp::create(builder.getUnknownLoc());
       OperatorType::buildNaiveExpress(module, std::forward<Args>(args)...);

@@ -12,9 +12,6 @@ class EnumOperator(Enum):
         return f'{self.name}'
 
 
-        
-        # 1024/ self.BLOCK_SIZE_M, 1024/ self.BLOCK_SIZE_N 
-
 class UserInputs:
     def __init__(self,hsaco_path:str,kernel_func_name:str,kernelParam : KernelArgMatmul):
         self.operatorKind = EnumOperator.Matmul
@@ -57,7 +54,7 @@ class CompiledKernelFactory :
     @staticmethod
     def getKernel(info : UserInputs) -> CompiledKernel:
         if info.operatorKind==EnumOperator.Matmul :
-            signature = getMatmulSignature(info.kernelParam.dtypeTorch('A'),info.kernelParam.dtypeTorch('B'))
+            signature = getMatmulSignature(info.kernelParam.dtypeTorch('A'),info.kernelParam.dtypeTorch('B'),info.kernelParam.dtypeTorch('C'))
             return CompiledKernel(
                 info.hsacoPath,
                 info.kernelFuncName,

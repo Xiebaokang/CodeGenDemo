@@ -300,7 +300,7 @@ class HIPLauncher :
         enterHookFunc = None
         exitHookFunc = None
         numCTAs = gridDims[0]*gridDims[1]*gridDims[2]
-        print(f"[Runtime] gridDIms = {gridDims}, blockdims={blockDims} ")
+        print(f"[Runtime] gridDims = {gridDims}, blockdims={blockDims} ")
         wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
                 # m.num_ctas,
                 numCTAs,
@@ -311,9 +311,7 @@ class HIPLauncher :
                 enterHookFunc,
                 exitHookFunc,
                 self,*args )
-        # self.c_wrapper(grid[0], grid[1], grid[2], self.num_warps, self.num_ctas, self.clusterDims[0],
-        #     self.clusterDims[1], self.clusterDims[2], self.shared, stream, self.cu_function,
-        #     CompiledKernel.launch_enter_hook, CompiledKernel.launch_exit_hook, self, *args_expand)
+
         if wrapper is None :
             print("[D] error cwrapper")
         else:

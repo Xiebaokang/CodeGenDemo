@@ -274,3 +274,34 @@ class PathManager :
     def kcg_compiler_path()->str:
         return os.path.join(PathManager.project_dir(),"bin/libkcg_compiler.so")
         # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
+
+
+#  关键字
+class ConfigKeywords :
+    KEY_BLOCK_SIZE_M =         "BLOCK_SIZE_M"
+    KEY_BLOCK_SIZE_N =         "BLOCK_SIZE_N"
+    KEY_BLOCK_SIZE_K =         "BLOCK_SIZE_K"
+    KEY_THREAD_SIZE_M =        "THREAD_SIZE_M"
+    KEY_THREAD_SIZE_N =        "THREAD_SIZE_N"
+    KEY_VECTORIZE_WIDTH =      "VECTORIZE_WIDTH"
+    KEY_WARP_SIZE =            "WARP_SIZE"
+    KEY_BLOCK_LAYOUT_M =       "BLOCK_LAYOUT_M"
+    KEY_BLOCK_LAYOUT_N =       "BLOCK_LAYOUT_N"
+    KEY_WARP_LAYOUT_M =        "WARP_LAYOUT_M"
+    KEY_WARP_LAYOUT_N =        "WARP_LAYOUT_N"
+    KEY_DTYPE_A =              "DATATYPE_A"
+    KEY_DTYPE_B =              "DATATYPE_B"
+    KEY_DTYPE_C =              "DATATYPE_C"
+    KEY_M =                    "M_SIZE"
+    KEY_N =                    "N_SIZE"
+    KEY_K =                    "K_SIZE"
+    KEY_IS_A_TRANSPOSE =       "IS_ATRANS"
+    KEY_GLOB_LOAD_WIDTH_A =     "GLOB_LOAD_WIDTH_A"
+    KEY_GLOB_LOAD_WIDTH_B =     "GLOB_LOAD_WIDTH_B"
+    KEY_WARP_SCATTER_WIDTH_A =    "WARP_SCATTER_WIDTH_A"
+    KEY_WARP_SCATTER_WIDTH_B =    "WARP_SCATTER_WIDTH_B"
+    KEY_THREAD_SCATTER_WIDTH_A =    "THREAD_SCATTER_WIDTH_A"
+    KEY_THREAD_SCATTER_WIDTH_B =    "THREAD_SCATTER_WIDTH_B"
+    KEY_LOCAL_SPLIT_U =     "LOCAL_SPLIT_U"
+    KEY_BLOCK_MAPPING =     "BLOCK_MAPPING"
+    KEY_GLOB_STORE_WIDTH =    "GLOB_STORE_WIDTH"

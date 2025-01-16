@@ -1,10 +1,126 @@
 #include "Common/Utils.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "Common/cJSON.h"
+#include <fstream>
 
 namespace KernelCodeGen {
 
 
 namespace tools {
+
+char* _cjson_getString(cJSON* json, const std::string& key){
+  auto value = cJSON_GetObjectItem(json, key.data());
+  if(cJSON_IsString(value) && value->valuestring != nullptr){
+    return value->valuestring;
+  }
+  return nullptr;
+}
+
+bool _parseKeyInt(cJSON* json, Config& cfg, const std::string& key){
+  auto value = cJSON_GetObjectItem(json, key.data());
+  if(cJSON_IsNumber(value)){
+    cfg.at(key) = value->valueint;
+    return true;
+  }
+  return false;
+}
+
+Config _parseCfgItem(cJSON* item){
+  Config ret = {
+      {KEY_BLOCK_SIZE_M, 0}, {KEY_BLOCK_SIZE_N, 0}, {KEY_BLOCK_SIZE_K, 0}, 
+      {KEY_THREAD_SIZE_M, 0}, {KEY_THREAD_SIZE_N, 0}, 
+      {KEY_VECTORIZE_WIDTH, 0}, {KEY_WARP_SIZE, 0}, 
+      {KEY_BLOCK_LAYOUT_M, 0}, {KEY_BLOCK_LAYOUT_N, 0}, 
+      {KEY_WARP_LAYOUT_M, 0}, {KEY_WARP_LAYOUT_N, 0},
+      {KEY_DTYPE_A, (int)0},{KEY_DTYPE_B, (int)0},{KEY_DTYPE_C, (int)0},
+      {KEY_M, (int)0},{KEY_N, (int)0},{KEY_K, (int)0},
+      {KEY_IS_A_TRANSPOSE,(int)0},
+      {KEY_GLOB_LOAD_WIDTH_A,(int)0},
+      {KEY_GLOB_LOAD_WIDTH_B,(int)0},
+      {KEY_WARP_SCATTER_WIDTH_A,(int)0},
+      {KEY_WARP_SCATTER_WIDTH_B,(int)0},
+      {KEY_THREAD_SCATTER_WIDTH_A,(int)0},
+      {KEY_THREAD_SCATTER_WIDTH_B,(int)0},
+      {KEY_LOCAL_SPLIT_U,(int)0},
+      {KEY_BLOCK_MAPPING,(int)0},
+      {KEY_GLOB_STORE_WIDTH,(int)0}
+    };
+
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_SIZE_M)) ;
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_SIZE_N)) ;
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_SIZE_K)) ;
+  assert(_parseKeyInt(item,ret,KEY_THREAD_SIZE_M)) ;
+  assert(_parseKeyInt(item,ret,KEY_THREAD_SIZE_N)) ;
+  assert(_parseKeyInt(item,ret,KEY_WARP_SIZE)) ;
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_LAYOUT_M)) ;
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_LAYOUT_N)) ;
+  assert(_parseKeyInt(item,ret,KEY_WARP_LAYOUT_M)) ;
+  assert(_parseKeyInt(item,ret,KEY_WARP_LAYOUT_N)) ;
+  assert(_parseKeyInt(item,ret,KEY_DTYPE_A)) ;
+  assert(_parseKeyInt(item,ret,KEY_DTYPE_B)) ;
+  assert(_parseKeyInt(item,ret,KEY_DTYPE_C)) ;
+  assert(_parseKeyInt(item,ret,KEY_M)) ;
+  assert(_parseKeyInt(item,ret,KEY_N)) ;
+  assert(_parseKeyInt(item,ret,KEY_K)) ;
+  assert(_parseKeyInt(item,ret,KEY_IS_A_TRANSPOSE)) ;
+  assert(_parseKeyInt(item,ret,KEY_GLOB_LOAD_WIDTH_A)) ;
+  assert(_parseKeyInt(item,ret,KEY_GLOB_LOAD_WIDTH_B)) ;
+  assert(_parseKeyInt(item,ret,KEY_WARP_SCATTER_WIDTH_A)) ;
+  assert(_parseKeyInt(item,ret,KEY_WARP_SCATTER_WIDTH_B)) ;
+  assert(_parseKeyInt(item,ret,KEY_THREAD_SCATTER_WIDTH_A)) ;
+  assert(_parseKeyInt(item,ret,KEY_THREAD_SCATTER_WIDTH_B)) ;
+  assert(_parseKeyInt(item,ret,KEY_LOCAL_SPLIT_U)) ;
+  assert(_parseKeyInt(item,ret,KEY_BLOCK_MAPPING)) ;
+  assert(_parseKeyInt(item,ret,KEY_GLOB_STORE_WIDTH)) ;
+  return ret;
+}
+
+bool parseJsonToConfigs(std::string filename, std::vector<Config>& res){
+    std::ifstream file(filename); // 打开 JSON 文件
+    if (!file.is_open()) {
+        std::cout << "open jsonfile ["<<filename <<"] error" << std::endl;
+        return false;
+    }
+
+    // 获取文件内容的长度
+    file.seekg(0, std::ios::end);
+    size_t length = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    // 读取文件内容到字符串中
+    std::string content(length,' ');
+    file.read(&content[0], length);
+    // 关闭文件
+    file.close();
+    std::cout << content << std::endl;
+
+    
+    // 解析 JSON 文件内容
+    cJSON *json = cJSON_Parse(content.data());
+    if (!json) {
+        fprintf(stderr, "Error parsing JSON.\n");
+        return 1;
+    }
+
+    // 读取 JSON 中的字段
+    cJSON *cfgs = cJSON_GetObjectItem(json, "cfgs");
+    if(cJSON_IsArray(cfgs)){
+      auto len = cJSON_GetArraySize(cfgs);
+      for(int i=0;i<len;++i){
+        auto config = cJSON_GetArrayItem(cfgs,i);
+        if(config != nullptr){
+          auto cfgmap = _parseCfgItem(config);
+          res.push_back(cfgmap);
+        }
+      }
+    }
+
+    // 释放 cJSON 对象
+    cJSON_Delete(json);
+    return true;
+}
+
+
 mlir::Type getDType(mlir::OpBuilder& builder, const std::string& dtype) {
   if(dtype == "float32") return builder.getF32Type();
   if(dtype == "float64") return builder.getF64Type();

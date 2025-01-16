@@ -126,6 +126,15 @@ enum class KcgKernelType : int {
   // other operators ...
 };
 
+using Config = std::map<std::string, int>;
+
+struct KernelInfo {
+  std::string m_hsacoPath;
+  std::string m_kernelName;
+  std::vector<int> m_gridDims = {1,1,1};
+  std::vector<int> m_blockDims = {1,1,1};
+};
+
 static std::ostream& operator<<(std::ostream& s, KcgDtype ty){
   switch(ty){
     case KcgDtype::float8: s << "f8" ; break;
@@ -219,6 +228,8 @@ namespace tools {
   std::vector<int> getIntArrayAttr(mlir::Operation* op, const std::string& name);
   /* ******** for debug use *************** */
   void _opSetDescription(mlir::Operation* op, const std::string& attrValue);
+
+  bool parseJsonToConfigs(std::string filename, std::vector<Config>& res);
 
 namespace mapUtils {
   

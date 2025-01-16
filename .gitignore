@@ -10,3 +10,4 @@ dump/*
 *pmc_results_*.txt
 include/config.h
 include/config.h
+include/config.h

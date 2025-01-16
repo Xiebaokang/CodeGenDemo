@@ -15,6 +15,16 @@
             "python": "/home/xushilong/anaconda3/envs/triton_rocm/bin/python"
         },
         {
+            "name": "Python Debugger: testGetKernels.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/Runtime/python/kcg/testGetKernels.py",
+            "console": "integratedTerminal",
+            "env": {"PYTHONPATH":"${workspaceFolder}/Runtime/python"},
+            "cwd": "${workspaceFolder}/Runtime/python/kcg",
+            "python": "/home/xushilong/anaconda3/envs/triton_rocm/bin/python"
+        },
+        {
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",

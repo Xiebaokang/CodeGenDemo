@@ -17,6 +17,12 @@ std::unique_ptr<Optimizer> createOptimizer(const std::string& opName) {
   return nullptr;
 }
 
+KernelCodeGenerator::KernelCodeGenerator(const KernelCodeGenerator& other):
+  KernelCodeGenerator(other.target,other.arch)
+{
+  ;
+}
+
 
 bool KernelCodeGenerator::optimize(mlir::ModuleOp &mod, std::map<std::string, int> config) {
   auto opNames = Analyzer::collectFuncNames(mod);
