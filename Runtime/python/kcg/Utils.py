@@ -14,7 +14,7 @@ import sysconfig
 from typing import List,Type
 import setuptools
 import torch
-
+from typing import List,Tuple,Dict
 
 # TODO: is_hip shouldn't be here
 def is_hip():

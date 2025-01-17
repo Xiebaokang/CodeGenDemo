@@ -29,7 +29,7 @@ Config _parseCfgItem(cJSON* item){
   Config ret = {
       {KEY_BLOCK_SIZE_M, 0}, {KEY_BLOCK_SIZE_N, 0}, {KEY_BLOCK_SIZE_K, 0}, 
       {KEY_THREAD_SIZE_M, 0}, {KEY_THREAD_SIZE_N, 0}, 
-      {KEY_VECTORIZE_WIDTH, 0}, {KEY_WARP_SIZE, 0}, 
+      {KEY_WARP_SIZE, 0}, 
       {KEY_BLOCK_LAYOUT_M, 0}, {KEY_BLOCK_LAYOUT_N, 0}, 
       {KEY_WARP_LAYOUT_M, 0}, {KEY_WARP_LAYOUT_N, 0},
       {KEY_DTYPE_A, (int)0},{KEY_DTYPE_B, (int)0},{KEY_DTYPE_C, (int)0},
