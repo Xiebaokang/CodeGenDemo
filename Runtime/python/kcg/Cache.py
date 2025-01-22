@@ -39,24 +39,25 @@ class FileCacheManager(CacheManager):
     def __init__(self, key, override=False, dump=False):
         self.key = key
         self.lock_path = None
+        PathManager.init()
         if dump:
             self.cache_dir = PathManager.default_dump_dir()
-            self.cache_dir = os.path.join(self.cache_dir, self.key)
+            # self.cache_dir = os.path.join(self.cache_dir, self.key)
             self.lock_path = os.path.join(self.cache_dir, "lock")
             os.makedirs(self.cache_dir, exist_ok=True)
         elif override:
             self.cache_dir = PathManager.default_override_dir()
-            self.cache_dir = os.path.join(self.cache_dir, self.key)
+            # self.cache_dir = os.path.join(self.cache_dir, self.key)
         else:
             # create cache directory if it doesn't exist
-            self.cache_dir = os.getenv("KCG_CACHE_DIR", "").strip() or PathManager.default_cache_dir()
+            self.cache_dir = PathManager.default_cache_dir()
             if self.cache_dir:
-                self.cache_dir = os.path.join(self.cache_dir, str(self.key))
+                # self.cache_dir = os.path.join(self.cache_dir, str(self.key))
                 self.lock_path = os.path.join(self.cache_dir, "lock")
                 os.makedirs(self.cache_dir, exist_ok=True)
             else:
                 raise RuntimeError("Could not create or locate cache dir")
-
+    
     def _make_path(self, filename) -> str:
         return os.path.join(self.cache_dir, filename)
 

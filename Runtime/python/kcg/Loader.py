@@ -68,31 +68,31 @@ class HIPLoaderST(object):
         return cls.instance
 
     def __init__(self):
-        dirname = os.path.dirname(os.path.realpath(__file__))
         src = Path(PathManager.loader_c_path_hip()).read_text()
-        key = calculate_file_hash(file_path=PathManager.loader_c_path_hip())
-        cache = FileCacheManager(key)
-        fname = "loader_hip.so"
-        cache_path = cache.get_file(fname)
-        if cache_path is None:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                src_path = os.path.join(tmpdir, "main.c")
-                with open(src_path, "w") as f:
-                    f.write(src)
-                # so = build("loader_hip", src_path, tmpdir)
-                cache_path = build("loader_hip", src_path, tmpdir)
-                
-                # with open(so, "rb") as f:
-                #     cache_path = cache.put(f.read(), fname, binary=True)
-        import importlib.util
-
-        spec = importlib.util.spec_from_file_location("loader_hip", cache_path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        self.load_binary = mod.load_binary
-        self.get_device_properties = mod.get_device_properties
+        self.key = calculate_file_hash(file_path=PathManager.loader_c_path_hip())
+        self.cache = FileCacheManager(self.key)
+        self.fname = "loader_hip.so"
+        self.cache_path = self.cache.get_file(self.fname)
+        self.load_binary = None
+        print('cache_path=',self.cache_path)
+        if self.cache_path is None:
+            tmpdir = PathManager.default_cache_dir()
+            # with tempfile.TemporaryDirectory() as tmpdir:
+            src_path = tmpdir + "/main.c"
+            with open(src_path, "w") as f:
+                f.write(src)
+            so = build("loader_hip", src_path, tmpdir)
+            with open(so, "rb") as f:
+                self.cache_path = self.cache.put(f.read(), self.fname, binary=True)
         
     def loadBinary(self, kernelFile : KernelLibFile) -> KernelRuntimeInfo :
+        if self.load_binary is None:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("loader_hip", self.cache_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            self.load_binary = mod.load_binary
+            self.get_device_properties = mod.get_device_properties
         if kernelFile.m_kernelInfo is None:
             binaryPath = kernelFile.m_filePath
             name = kernelFile.m_kernelFuncName

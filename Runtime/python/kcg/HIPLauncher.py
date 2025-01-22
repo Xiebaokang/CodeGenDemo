@@ -27,23 +27,24 @@ import importlib.util
 def make_stub(kernelLibFile : KernelLibFile) -> str :
     so_cache_key = str(kernelLibFile.hash())
     so_cache_manager = FileCacheManager(so_cache_key)
-    so_name = f"{so_cache_key + kernelLibFile.m_kernelFuncName}.so"
+    # so_name = f"{so_cache_key + kernelLibFile.m_kernelFuncName}.so"
+    so_name = f"{kernelLibFile.m_kernelFuncName}.so"
     # retrieve stub from cache if it exists
     cache_path = so_cache_manager.get_file(so_name)
-    cache_path = None
     if cache_path is None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            src = generate_launcher_hip(kernelLibFile)
-            src_path = os.path.join(tmpdir, "main.c")
-            with open(src_path, "w") as f:
-                for line in src:
-                    f.write(line)  # generate stub code
-            with open('/home/xushilong/CodeGenDemo/tempstub.c', "w") as f:
-                for line in src:
-                    f.write(line)  # generate stub code
-            so = build(so_name, src_path, tmpdir)
-            with open(so, "rb") as f:
-                return so_cache_manager.put(f.read(), so_name, binary=True)
+        # with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = PathManager().default_cache_dir()
+        src = generate_launcher_hip(kernelLibFile)
+        src_path = os.path.join(tmpdir, "stub_main.c")
+        with open(src_path, "w") as f:
+            for line in src:
+                f.write(line)  # generate stub code
+        # with open('/home/xushilong/CodeGenDemo/tempstub.c', "w") as f:
+        #     for line in src:
+        #         f.write(line)  # generate stub code
+        so = build(so_name, src_path, tmpdir)
+        with open(so, "rb") as f:
+            return so_cache_manager.put(f.read(), so_name, binary=True)
     else:
         return cache_path
 

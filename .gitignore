@@ -11,3 +11,5 @@ dump/*
 include/config.h
 include/config.h
 include/config.h
+_cache/
+cfg_cominations.json

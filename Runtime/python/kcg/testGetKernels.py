@@ -1,11 +1,12 @@
-from KCGTask import *
-from ConfigGenerator import *
+if __name__ == '__main__' :
+    from KCGTask import *
+    import multiprocessing 
+    from ConfigGenerator import *
 
-json_path = '/home/xushilong/CodeGenDemo/cfg_cominations.json'
-config_gen(json_path)
-tg = KernelTaskGroup(json_path=json_path)
-try:
-    tg.run(limit=30)
-except Exception as e:
-    print(e)
-print("OK")
+    json_path = '/home/xushilong/CodeGenDemo/cfg_cominations.json'
+    config_gen(json_path)
+    tm =  ParallelCompileTaskManager(json_path)
+    tm.run(maxProcess=10, json_cfgs_limit=30)
+    res = tm.getResults()
+    print(type(res))
+    PerfTester.runPerfTests(res)

@@ -58,7 +58,7 @@ def _matmul(a, b, c):
 
 
 # public interface:
-def getMatmulSignature(dtypeA: torch.dtype, dtypeB : torch.dtype, dtypeC : torch.dtype):
+def getMatmulSignature(dtypeA: torch.dtype, dtypeB : torch.dtype, dtypeC : torch.dtype) -> dict:
     # signature只和输入的dtype有关，尺寸无关
     a = torch.randn((1024, 1024), device='cuda', dtype=dtypeA)
     b = torch.randn((1024, 1024), device='cuda', dtype=dtypeB)
@@ -68,7 +68,7 @@ def getMatmulSignature(dtypeA: torch.dtype, dtypeB : torch.dtype, dtypeC : torch
     c = torch.empty((M, N), device='cuda', dtype=dtypeC)
     # get function signature
     outSignature = _matmul(a, b, c)
-    print("[D] mm signatrue = ",outSignature)
+    print(f"[D] mm signature = {outSignature}, type =  {type(outSignature.values())}",)
     return outSignature
 
 
@@ -134,3 +134,33 @@ class KernelArgMatmul :
         if index=='C':
             return ToTorchType(self.__dataType_C)
     
+    def __str__(self):
+        retstr = '['
+        retstr += (str(self.BLOCK_SIZE_M) + ',')
+        retstr += (str(self.BLOCK_SIZE_N) + ',')
+        retstr += (str(self.BLOCK_SIZE_K) + ',')
+        retstr += (str(self.THREAD_SIZE_M) + ',')
+        retstr += (str(self.THREAD_SIZE_N) + ',')
+        retstr += (str(self.VECTORIZE_WIDTH) + ',')
+        retstr += (str(self.WARP_SIZE) + ',')
+        retstr += (str(self.BLOCK_LAYOUT_M) + ',')
+        retstr += (str(self.BLOCK_LAYOUT_N) + ',')
+        retstr += (str(self.WARP_LAYOUT_M) + ',')
+        retstr += (str(self.WARP_LAYOUT_N) + ',')
+        retstr += (str(self.__dataType_A) + ',')
+        retstr += (str(self.__dataType_B) + ',')
+        retstr += (str(self.__dataType_C) + ',')
+        retstr += (str(self.M) + ',')
+        retstr += (str(self.N) + ',')
+        retstr += (str(self.K) + ',')
+        retstr += (str(self.isATranspose) + ',')
+        retstr += (str(self.GLOB_LOAD_WIDTH_A) + ',')
+        retstr += (str(self.GLOB_LOAD_WIDTH_B) + ',')
+        retstr += (str(self.WARP_SCATTER_WIDTH_A) + ',')
+        retstr += (str(self.WARP_SCATTER_WIDTH_B) + ',')
+        retstr += (str(self.THREAD_SCATTER_WIDTH_A) + ',')
+        retstr += (str(self.THREAD_SCATTER_WIDTH_B) + ',')
+        retstr += (str(self.LOCAL_SPLIT_U) + ',')
+        retstr += (str(self.BLOCK_MAPPING) + ',')
+        retstr += (str(self.GLOB_STORE_WIDTH ) + ']')
+        return retstr

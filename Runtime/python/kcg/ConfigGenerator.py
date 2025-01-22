@@ -29,7 +29,7 @@ param_options = {
     ConfigKeywords.KEY_M : [1024],
     ConfigKeywords.KEY_N : [1024],
     ConfigKeywords.KEY_K : [1024],
-    ConfigKeywords.KEY_IS_A_TRANSPOSE : [0]
+    ConfigKeywords.KEY_IS_A_TRANSPOSE : [1]
 }
 
 # 获取所有参数名和对应的可选值

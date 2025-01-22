@@ -7,6 +7,7 @@ import functools
 import io
 import os
 from pathlib import Path
+import pickle
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,32 @@ def is_hip():
     import torch
     return torch.version.hip is not None
 
+
+def is_main_process(selfPid = os.getpid()):
+    fname = '/home/xushilong/CodeGenDemo/kcg_pid'
+    lines = []
+    ret = False
+    with open(fname,mode='r+') as f :
+        lines = f.readlines()
+    if len(lines) == 0 :
+        ret = True
+        with open(fname,mode='r+') as f :
+            main_pid = str(selfPid)
+            f.write(main_pid)
+    return ret
+
+def serialize_to_file(pkl_path, obj) :
+    with open(pkl_path, 'wb') as f:
+        pickle.dump(obj, file=f)  # 进行序列化
+
+def deserialize_from_file(pkl_path) :
+    with open(pkl_path, 'rb') as f:
+        try:
+            temp = pickle.load(f)  # 进行反序列化
+        except EOFError as e:
+            print("EOF Error!")
+            return None
+        return temp
 
 @functools.lru_cache()
 def libcuda_dirs():
@@ -252,16 +279,23 @@ class PathManager :
         return Path(os.path.dirname(os.path.realpath(__file__))).parent.parent.parent
     
     @staticmethod
+    def pikle_dir() ->str :
+        return str(PathManager.project_dir())+'/_pkls'
+    
+    @staticmethod
     def default_cache_dir()->str:
-        return os.path.join(Path.home(), ".kcg", "cache")
+        # return os.path.join(Path.home(), ".kcg", "cache")
+        return str(PathManager.project_dir()) + '/_cache'
 
     @staticmethod
     def default_override_dir()->str:
-        return os.path.join(Path.home(), ".kcg", "override")
+        # return os.path.join(Path.home(), ".kcg", "override")
+        return str(PathManager.project_dir()) + '/_override'
 
     @staticmethod
     def default_dump_dir()->str:
-        return os.path.join(Path.home(), ".kcg", "dump")
+        # return os.path.join(Path.home(), ".kcg", "dump")
+        return str(PathManager.project_dir()) + '/_dump'
 
     @staticmethod
     def loader_c_path_hip()->str:
@@ -274,8 +308,14 @@ class PathManager :
     def kcg_compiler_path()->str:
         return os.path.join(PathManager.project_dir(),"bin/libkcg_compiler.so")
         # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
-
-
+    
+    @staticmethod
+    def init() :
+        os.makedirs(PathManager.pikle_dir(),exist_ok=True)
+        os.makedirs(PathManager.default_cache_dir(),exist_ok=True)
+        os.makedirs(PathManager.default_override_dir(),exist_ok=True)
+        os.makedirs(PathManager.default_dump_dir(),exist_ok=True)
+        
 #  关键字
 class ConfigKeywords :
     KEY_BLOCK_SIZE_M =         "BLOCK_SIZE_M"
@@ -305,3 +345,6 @@ class ConfigKeywords :
     KEY_LOCAL_SPLIT_U =     "LOCAL_SPLIT_U"
     KEY_BLOCK_MAPPING =     "BLOCK_MAPPING"
     KEY_GLOB_STORE_WIDTH =    "GLOB_STORE_WIDTH"
+    
+if __name__ == '__main__' :
+    PathManager.init()

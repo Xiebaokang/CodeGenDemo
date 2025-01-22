@@ -297,7 +297,9 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
   std::vector<KernelInfo> kernels;
   std::string hsacoPath;
   Py_BEGIN_ALLOW_THREADS;
+  std::cout << "[pymod] start _compile" << std::endl;
   kernels = _compile(config);
+  std::cout << "[pymod] _compile success" << std::endl;
   Py_END_ALLOW_THREADS;
   Py_INCREF(Py_None);
   // return Py_None;
@@ -308,11 +310,19 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
     // 假设元素数组元素是以字符串和整数对的方式存在
     // 这里你需要将每一对 (ss, i...) 插入
     const auto& kernel = kernels[i];
+    std::vector<int> gridDims = {1,1,1};
+    std::vector<int> blockDims = {1,1,1};
+    for(int i=0;i<kernel.m_gridDims.size();++i){
+      gridDims[i] = kernel.m_gridDims[i];
+    }
+    for(int i=0;i<kernel.m_blockDims.size();++i){
+      blockDims[i] = kernel.m_blockDims[i];
+    }
     PyObject* item = Py_BuildValue("(ssiiiiii)",
       kernel.m_hsacoPath.c_str(),
       kernel.m_kernelName.c_str(),
-      kernel.m_gridDims[0],kernel.m_gridDims[1],kernel.m_gridDims[2],
-      kernel.m_blockDims[0],kernel.m_blockDims[1],kernel.m_blockDims[2]
+      gridDims[0],gridDims[1],gridDims[2],
+      blockDims[0],blockDims[1],blockDims[2]
     );
     if (item == NULL) {
       Py_DECREF(retArr);
@@ -320,6 +330,7 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
     }
     PyTuple_SetItem(retArr, i, item);  // 将每个元素插入元组
   }
+  std::cout << "[pymod] ======== compile_kernel_matmul return " << std::endl;
   return retArr;
 }
 
@@ -345,14 +356,6 @@ PyMODINIT_FUNC PyInit_KCGCompiler(void) {
 }
 
 #else
-
-int testCfg( std::vector<Config> configs){
-
-  std::vector<std::string> names = {10,"GEMM_testKernel"};
-  auto result = generateKernels(configs, names);
-  return 0;
-}
-
 
 int main(){
 
@@ -386,7 +389,7 @@ int main(){
   config.m_size = 1024;
   config.n_size = 1024;
   config.k_size = 1024;
-  config.m_isATranspose = false;
+  config.m_isATranspose = true;
   config.m_dtypeC = KcgDtype::float32;
 
   auto ret = _compile(config);
