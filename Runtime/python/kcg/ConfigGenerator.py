@@ -29,7 +29,12 @@ param_options = {
     ConfigKeywords.KEY_M : [1024],
     ConfigKeywords.KEY_N : [1024],
     ConfigKeywords.KEY_K : [1024],
-    ConfigKeywords.KEY_IS_A_TRANSPOSE : [1]
+    ConfigKeywords.KEY_IS_A_TRANSPOSE : [1],
+    ConfigKeywords.KEY_UNROLL_NUM : [4,8,16],
+    ConfigKeywords.KEY_REG_PREFETCH :         [1],
+    ConfigKeywords.KEY_SHARED_PREFETCH :      [1],
+    ConfigKeywords.KEY_LOAD_CONTINUOUS :      [1],
+    ConfigKeywords.KEY_REDUCE_C_CONTINUOUS :  [1]
 }
 
 # 获取所有参数名和对应的可选值

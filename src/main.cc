@@ -53,11 +53,16 @@ public:
   int m_LOCAL_SPLIT_U;
   int m_BLOCK_MAPPING;
   int m_GLOB_STORE_WIDTH;  // 17+9=26
+  int m_UNROLL_NUM;
+  int m_REG_PREFETCH;
+  int m_SHARED_PREFETCH;
+  int m_LOAD_CONTINUOUS;
+  int m_REDUCE_C_CONTINUOUS;  // 31
 
 #ifdef COMPILE_AS_PYMODULE
   // 此处应保证python传参的顺序和parse顺序相同
   bool parse(PyObject* args){
-    if(PyArg_ParseTuple(args, std::string(26,'i').c_str(),
+    if(PyArg_ParseTuple(args, std::string(31,'i').c_str(),
       &m_BLOCK_SIZE_M,
       &m_BLOCK_SIZE_N,
       &m_BLOCK_SIZE_K,
@@ -78,6 +83,12 @@ public:
       &m_LOCAL_SPLIT_U,
       &m_BLOCK_MAPPING,
       &m_GLOB_STORE_WIDTH,
+
+      &m_UNROLL_NUM,
+      &m_REG_PREFETCH,
+      &m_SHARED_PREFETCH,
+      &m_LOAD_CONTINUOUS,
+      &m_REDUCE_C_CONTINUOUS, 
 
       &m_dtypeA, &m_dtypeB, &m_dtypeC,
       &m_size,&n_size,&k_size,
@@ -124,6 +135,12 @@ public:
     paramCombine(ss, "LSU", m_LOCAL_SPLIT_U);
     paramCombine(ss, "BM", m_BLOCK_MAPPING);
 
+    paramCombine(ss,"UNROLL",m_UNROLL_NUM) ;
+    paramCombine(ss,"REGP",m_REG_PREFETCH) ;
+    paramCombine(ss,"SHMP",m_SHARED_PREFETCH) ;
+    paramCombine(ss,"LC",m_LOAD_CONTINUOUS) ;
+    paramCombine(ss,"RC",m_REDUCE_C_CONTINUOUS) ; 
+
     return ss.str();
   }
 
@@ -156,6 +173,12 @@ public:
       {KEY_LOCAL_SPLIT_U , m_LOCAL_SPLIT_U},
       {KEY_BLOCK_MAPPING , m_BLOCK_MAPPING},
       {KEY_GLOB_STORE_WIDTH , m_GLOB_STORE_WIDTH},
+
+      {KEY_UNROLL_NUM, m_UNROLL_NUM},
+      {KEY_REG_PREFETCH, m_REG_PREFETCH},
+      {KEY_SHARED_PREFETCH, m_SHARED_PREFETCH},
+      {KEY_LOAD_CONTINUOUS, m_LOAD_CONTINUOUS},
+      {KEY_REDUCE_C_CONTINUOUS,  m_REDUCE_C_CONTINUOUS}, 
     };
     return ret;
   }
@@ -257,11 +280,11 @@ std::vector<KernelInfo> generateKernels(
       );
 
       auto res1 = generator.optimize(kernel, config);
-      std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
+      // std::cout << "==== optimize status: " << (res1?"SUCCESS":"FAILED") << "\n";
       auto res2 = generator.lowering(kernel);
-      std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
+      // std::cout << "==== lowering status: " << (res2?"SUCCESS":"FAILED") << "\n";
       std::string hsacoPath = generator.translate(kernel);
-      std::cout << "==== translate res :" << "\n";
+      // std::cout << "==== translate res :" << "\n";
       std::cout << hsacoPath << "\n";
       info.m_hsacoPath = hsacoPath;
       info.m_kernelName = generator.kernelFuncName<Operators::Matmul>();

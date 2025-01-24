@@ -102,6 +102,12 @@ class KernelArgMatmul :
         self.BLOCK_MAPPING : int = 0
         self.GLOB_STORE_WIDTH : int = 0
         
+        self.UNROLL_NUM : int = 1
+        self.REG_PREFETCH : int = 0
+        self.SHARED_PREFETCH : int = 0
+        self.LOAD_CONTINUOUS : int = 0
+        self.REDUCE_C_CONTINUOUS : int = 0
+        
     def check(self) :
         # problem size check
         assert self.M % self.BLOCK_SIZE_M == 0 
@@ -162,5 +168,10 @@ class KernelArgMatmul :
         retstr += (str(self.THREAD_SCATTER_WIDTH_B) + ',')
         retstr += (str(self.LOCAL_SPLIT_U) + ',')
         retstr += (str(self.BLOCK_MAPPING) + ',')
-        retstr += (str(self.GLOB_STORE_WIDTH ) + ']')
+        retstr += (str(self.GLOB_STORE_WIDTH ) + ',')
+        retstr += (str(self.UNROLL_NUM) + ',')
+        retstr += (str(self.REG_PREFETCH) + ',')
+        retstr += (str(self.SHARED_PREFETCH) + ',')
+        retstr += (str(self.LOAD_CONTINUOUS) + ',')
+        retstr += (str(self.REDUCE_C_CONTINUOUS) + ']')
         return retstr

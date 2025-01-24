@@ -138,7 +138,7 @@ class PerfTester :
         return best_perf
       
     @staticmethod
-    def runPerfTests(lock, endsignal, outputPAth = None) : 
+    def runPerfTests(lock, endsignal ,outputPAth = None) : 
         # collect kernels from pkl         
         lastTry = False
         startFLag = True
@@ -236,8 +236,23 @@ class ParallelTaskManager :
         self.task_groups = []
         self.m_totalKernels = []
         self.endSignal = ctx.Manager().Value(ctypes.c_int,0)
-        self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,perf_out_path))
-        
+        self.perfTestFinalId = ctx.Manager().Value(ctypes.c_int,0)
+        self.perf_out_path = perf_out_path
+        self.perfProcMonitor = self.Process(target=self._perfMonitorFunc,args=())
+    
+    def _perfMonitorFunc(self) :
+        id = 0
+        self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,self.perf_out_path + str(id)))
+        self.perfProc.start()
+        while True:
+            self.perfProc.join()
+            if self.endSignal.value == 1 :  # 进程收到结束信号正常结束
+                return
+            else:
+                id += 1
+                self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,self.perf_out_path + str(id)))
+                self.perfProc.start()
+    
     def _createSubProc(self,func,*params) :
         p = self.Process(target = func, args = (*params,))
         p.start()
@@ -258,8 +273,11 @@ class ParallelTaskManager :
         currLen = 0
         if maxLen < 0:
             maxLen = len(cfgs)
-        for i in range(st,st + maxLen) :
-            if currLen >= maxLen or i >= len(cfgs):
+        endid = st + maxLen
+        if endid > len(cfgs) :
+            endid  = len(cfgs)
+        for i in range(st,endid) :
+            if currLen >= maxLen :
                 break
             currLen+=1
             config = cfgs[i]
@@ -287,19 +305,33 @@ class ParallelTaskManager :
             arg.LOCAL_SPLIT_U = config[kw.KEY_LOCAL_SPLIT_U]
             arg.BLOCK_MAPPING = config[kw.KEY_BLOCK_MAPPING]
             arg.GLOB_STORE_WIDTH = config[kw.KEY_GLOB_STORE_WIDTH]
+            arg.UNROLL_NUM = config[kw.KEY_UNROLL_NUM]
+            arg.REG_PREFETCH = config[kw.KEY_REG_PREFETCH]
+            arg.SHARED_PREFETCH = config[kw.KEY_SHARED_PREFETCH]
+            arg.LOAD_CONTINUOUS = config[kw.KEY_LOAD_CONTINUOUS]
+            arg.REDUCE_C_CONTINUOUS = config[kw.KEY_REDUCE_C_CONTINUOUS]
+            
             kernelArgs.append(arg)
             
         return kernelArgs
     
     def run(self, maxProcess = 10, st = 0, json_cfgs_limit = -1, needCompile = True, needPerfTest = True) :
-        kernelConfigs = self._get_kernelargMatmul(st = st, maxLen = json_cfgs_limit)
+        kernelConfigs = self._get_kernelargMatmul(st = 0, maxLen = -1)
         procCount = 0
         CFG_COUNT = len(kernelConfigs)
+        startId = st
+        if json_cfgs_limit < 0:
+            endId = CFG_COUNT
+        else:
+            endId = startId + json_cfgs_limit
+            if endId >= CFG_COUNT :
+                endId = CFG_COUNT
+                
         if needPerfTest:
-            self.perfProc.start()
+            self.perfProcMonitor.start()
         
         if needCompile :
-            for i in range(0,CFG_COUNT) :
+            for i in range(startId,endId) :
                 sct = SerialCompileTask()
                 self._createSubProc(sct.compile_kernels,self.lock,kernelConfigs,i,i+1)
                 procCount += 1
@@ -310,5 +342,6 @@ class ParallelTaskManager :
                     procCount = 0
             print(f"========= All Compile tasks Finished [{CFG_COUNT}] ! ============")
         self.endSignal.value = 1
+        
         if needPerfTest :
-            self.perfProc.join()
+            self.perfProcMonitor.join()

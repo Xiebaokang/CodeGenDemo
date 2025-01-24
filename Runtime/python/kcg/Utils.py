@@ -345,6 +345,11 @@ class ConfigKeywords :
     KEY_LOCAL_SPLIT_U =     "LOCAL_SPLIT_U"
     KEY_BLOCK_MAPPING =     "BLOCK_MAPPING"
     KEY_GLOB_STORE_WIDTH =    "GLOB_STORE_WIDTH"
+    KEY_UNROLL_NUM =            "UNROLL_NUM"
+    KEY_REG_PREFETCH =          "REG_PREFETCH"
+    KEY_SHARED_PREFETCH =       "SHARED_PREFETCH"
+    KEY_LOAD_CONTINUOUS =       "LOAD_CONTINUOUS"
+    KEY_REDUCE_C_CONTINUOUS =   "REDUCE_C_CONTINUOUS"
     
 if __name__ == '__main__' :
     PathManager.init()
