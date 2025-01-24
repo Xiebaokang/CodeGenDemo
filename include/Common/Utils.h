@@ -159,6 +159,7 @@ struct NVVMMetadata {
 /************* attribute names & other naming rules ***********/ 
 
 #define AttrKernelFunc    "nvvm.kernel"
+#define AttrMaxBlockThreads    "nvvm.maxntid"
 #define AttrVisibility    "sym_visibility" 
 #define AttrExternLib     "kcg.externlibs"
 #define AttrRootFunc      "kcg.rootfunc"
@@ -204,11 +205,11 @@ struct NVVMMetadata {
 
 #define INDEX_BIT_WIDTH     32
 #define KCG_ALIGNBYTE       16
-#define LOG_DEBUG(message,mod)  \
-{\
-  llvm::outs() << message;llvm::outs().flush(); mod.dump();\
+// #define LOG_DEBUG(message,mod)  \
+// {\
+//   llvm::outs() << message;llvm::outs().flush(); mod.dump();\
 }
-
+#define LOG_DEBUG(message,mod)  0
 
 /*******************  common tool functions ****************/
 

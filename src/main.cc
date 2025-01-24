@@ -236,9 +236,9 @@ std::vector<KernelInfo> generateKernels(
   const int cfgszie = configs.size();
   mlir::registerAllPasses();
   for (int i=0;i< cfgszie;++i) {
-    std::function<KernelInfo(Config)> task = [=](Config cfg)->KernelInfo
+    std::function<KernelInfo(Config&)> task = [i,&kernelNames](Config& cfg)->KernelInfo
     {
-      std::cout << cfg << std::endl;
+      // std::cout << cfg << std::endl;
       KernelCodeGenerator generator(Target::ROCm, "906");
       const auto config = cfg;
       const auto name = kernelNames[i];
@@ -273,8 +273,7 @@ std::vector<KernelInfo> generateKernels(
       std::cout << "==== kernel name : " << info.m_kernelName << "\n";
       return info;
     };  // end std::function<>
-    auto info = task(configs[i]);
-    result.push_back(info);
+    result.push_back(task(configs[i]));
     // pool.push_task(std::move(task),configs[i]);
   }
   // pool.wait_finish(cfgszie);
@@ -293,7 +292,7 @@ std::vector< KernelInfo> _compile(MatmulParams& config) {
 static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
   MatmulParams config;
   assert(config.parse(args));
-  std::cout << config << std::endl;
+  // std::cout << config << std::endl;
   std::vector<KernelInfo> kernels;
   std::string hsacoPath;
   Py_BEGIN_ALLOW_THREADS;

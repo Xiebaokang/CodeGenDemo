@@ -74,7 +74,7 @@ class HIPLoaderST(object):
         self.fname = "loader_hip.so"
         self.cache_path = self.cache.get_file(self.fname)
         self.load_binary = None
-        print('cache_path=',self.cache_path)
+        # print('cache_path=',self.cache_path)
         if self.cache_path is None:
             tmpdir = PathManager.default_cache_dir()
             # with tempfile.TemporaryDirectory() as tmpdir:

@@ -131,9 +131,7 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
       }
     }
 
-    llvm::outs() << "=======A \n" ; llvm::outs().flush();
     innerParallel.erase();
-    llvm::outs() << "=======B \n" ; llvm::outs().flush();
 
     SmallVector<Operation*> outerOpsToMove;
     for (auto &op : outerParallel.getBody()->getOperations()) {
@@ -148,10 +146,7 @@ struct ExtractAffineParallelPass : public PassWrapper<ExtractAffineParallelPass,
       }
     }
     // 删除 `affine.parallel` 操作
-    llvm::outs() << "=======C \n" ; llvm::outs().flush();
     outerParallel.erase();
-    llvm::outs() << "=======D \n" ; llvm::outs().flush();
-    llvm::outs() << "OK\n"; llvm::outs().flush();
   }
 };
 
@@ -307,9 +302,14 @@ struct ParallelToGPULowering : public OpRewritePattern<affine::AffineParallelOp>
     
     auto attr = rewriter.getDenseI32ArrayAttr(llvm::ArrayRef<int32_t>(ubs));
     if (isInner) {
-      funcOp->setAttr("func.block.dim", attr);
+      funcOp->setAttr(AttrBlockDim, attr);
+      int maxntid = 1;
+      for(auto e : attr.asArrayRef()){
+        maxntid *= e;
+      } 
+      tools::opSetAttr(funcOp,AttrMaxBlockThreads,maxntid);
     } else {
-      funcOp->setAttr("func.grid.dim", attr);
+      funcOp->setAttr(AttrGridDim, attr);
     }
     
     // 替换使用循环变量的操作

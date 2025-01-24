@@ -77,6 +77,11 @@ class KernelLibFile :
     def hash(self)->int :
         return calculate_file_hash(self.m_filePath) 
 
+    def signature_str(self) -> str :
+        ret = ''
+        for v in self.m_signature.values() :
+            ret += str(v)
+        return ret
 class KernelArg:
     """Represents an argument to a @jit'ed function.
 

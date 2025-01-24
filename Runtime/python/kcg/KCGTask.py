@@ -19,11 +19,11 @@ import time
 from logging import *
 from typing import List, Tuple
 import glob
+import ctypes
 # import pymlir
 
+best_perf = None
 
-
-    
 class KernelTestResult :
     def __init__(self,kpm : KernelArgMatmul):
         self.kpm = kpm
@@ -46,7 +46,7 @@ class PerfTester :
         diff_elements = torch.sum(error_mask).item()
         max_error = torch.max(torch.abs(tensor1 - tensor2))
         return diff_elements, max_error
-          
+
     @staticmethod
     def _test_perf(kpm:KernelArgMatmul, inConfig : UserInputs, packedKernel : CompiledKernel):
         result = KernelTestResult(kpm)
@@ -59,15 +59,12 @@ class PerfTester :
         assert(a.is_contiguous())
         assert(b.is_contiguous())
         assert(atrans.is_contiguous())
-        print(inConfig.kernelParam.dtypeTorch('A'))
-        print(inConfig.kernelParam.dtypeTorch('B'))
-        print(inConfig.kernelParam.dtypeTorch('C'))
+        # print(inConfig.kernelParam.dtypeTorch('A'))
+        # print(inConfig.kernelParam.dtypeTorch('B'))
+        # print(inConfig.kernelParam.dtypeTorch('C'))
         M, K = a.shape
         K, N = b.shape
-        print(f"python: M,N,K = {M},{N},{K}")
-        print("conti: a",a.is_contiguous())
-        print("conti: b",b.is_contiguous())
-        print("conti: atrans",atrans.is_contiguous())
+        print(f"is_contiguous: a {a.is_contiguous()}, b {b.is_contiguous()}, aT {atrans.is_contiguous()}")
         res = []
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
@@ -133,26 +130,54 @@ class PerfTester :
     
     @staticmethod
     def _getBestPerf(perfData : List[KernelTestResult]) -> KernelTestResult:
-        best = None
+        global best_perf
         for d in perfData:
             if d.isCorrect :
-                if best is None or best.acc < d.acc:
-                    best = d
-        return best
+                if best_perf is None or best_perf.acc < d.acc:
+                    best_perf = d
+        return best_perf
       
     @staticmethod
-    def runPerfTests(valid_kernels : List[Tuple[KernelArgMatmul,UserInputs,CompiledKernel]]) : 
-        # serialize test perf
-        perf_data = []
-        for (kpm,inConfig,packedKernel) in valid_kernels :
-            perf_data.append(PerfTester._test_perf(kpm,inConfig,packedKernel))             
-        print("========= Perf test complete ===========")
-        best_perf = PerfTester._getBestPerf(perf_data)
-        if best_perf is not None:
-            print(f"BESTPERF: {best_perf} ",)
-        else:
-            print(f'NO BESTPERF: All result is invalid. Please retry with new json')
+    def runPerfTests(lock, endsignal, outputPAth = None) : 
+        # collect kernels from pkl         
+        lastTry = False
+        startFLag = True
+        valid_kernels = [] # List[Tuple[KernelArgMatmul,UserInputs,CompiledKernel]]
+        while True:
+            lock.acquire()
+            pklFiles = glob.glob(PathManager().pikle_dir() + '/*.pkl')
+            lock.release()
+            if len(pklFiles) <= 0 :
+                if endsignal.value > 0:
+                    break
+                else:
+                    time.sleep(5)
+            # 输出所有找到的文件路径
+            for pkl in pklFiles:
+                arr = deserialize_from_file(pkl)
+                valid_kernels += arr
+            print(f"====== Glob .pkl files : {len(pklFiles)}, Valid Kernels : {len(valid_kernels)} ========")
+            for pkl in pklFiles:
+                try:
+                    os.remove(pkl)
+                    print(f"deleted: {pkl}")
+                except Exception as e:
+                    print(f"exception occur when delete {pkl}: {e}")
 
+            for t in valid_kernels :
+                print(f"{t[1].hsacoPath},  {t[1].kernelFuncName}")
+            perf_data = []
+            # serialize test perf
+            for (kpm,inConfig,packedKernel) in valid_kernels :
+                perf_data.append(PerfTester._test_perf(kpm,inConfig,packedKernel))        
+            valid_kernels.clear()
+            r = PerfTester._getBestPerf(perf_data)
+            if r is not None and outputPAth is not None :
+                with open(outputPAth,mode='w') as f:
+                    f.write(str(r) + '\n')
+
+        print(f"=====[ PerfTest Finished ] =======\n   - Best : {best_perf} ")
+    
 
 class SerialCompileTask :
     def _task_compile_kernel(self,kpm : KernelArgMatmul, index:int) -> Tuple[KernelArgMatmul,UserInputs,CompiledKernel] :
@@ -162,15 +187,15 @@ class SerialCompileTask :
         kernelCompiler = KCGCompiler()
         Print("===== call compileKernel(kpm)[0] ========")
         hsacoPath,kernelName,gridDimX,gridDimY,gridDimZ,blockDimX,blockDimY,blockDimZ = kernelCompiler.compileKernel(kpm)[0]
-        Print("===== test info ========")
-        Print("hsacoPath = ", hsacoPath)
-        Print("kernelName = ", kernelName)
-        Print("gridDimX = ", gridDimX)
-        Print("gridDimY = ", gridDimY)
-        Print("gridDimZ = ", gridDimZ)
-        Print("blockDimX = ", blockDimX)
-        Print("blockDimY = ", blockDimY)
-        Print("blockDimZ = ", blockDimZ)    
+        # Print("===== test info ========")
+        # Print("hsacoPath = ", hsacoPath)
+        # Print("kernelName = ", kernelName)
+        # Print("gridDimX = ", gridDimX)
+        # Print("gridDimY = ", gridDimY)
+        # Print("gridDimZ = ", gridDimZ)
+        # Print("blockDimX = ", blockDimX)
+        # Print("blockDimY = ", blockDimY)
+        # Print("blockDimZ = ", blockDimZ)    
         Print("========= hsacoPath = ",hsacoPath)
         Print("========= kernelName = ",kernelName)
         inConfig = UserInputs(hsacoPath,kernelName,kpm)
@@ -185,30 +210,33 @@ class SerialCompileTask :
         logger = logging.getLogger(logfile)
         return logger
     
-    def compile_kernels(self, kernelArgs : List[KernelArgMatmul],lbs=0,ubs=-1) -> List:
+    def compile_kernels(self, lock, kernelArgs : List[KernelArgMatmul],lbs=0,ubs=-1) -> List:
         # 读取 JSON 文件
         output_path = PathManager.pikle_dir() + f'/valid_kernels_{lbs}_{ubs}.pkl'
         valid_kernels = [] 
         if ubs < 0:
             lbs = 0; ubs = len(kernelArgs) 
-        print("====== serial compilation task start =========")
         for i in range(lbs,ubs) :
             kernelCfg = kernelArgs[i]
             r = self._task_compile_kernel(kernelCfg,i)   #维持执行的进程总数为processes，当一个进程执行完毕后会添加新的进程进去    
             valid_kernels.append(r)
-        print("====== serial compilation task done =========")
+        lock.acquire()
         serialize_to_file(output_path,valid_kernels)
+        lock.release()
         return valid_kernels
   
 
-class ParallelCompileTaskManager :
-    def __init__(self,json_path : str):
+class ParallelTaskManager :
+    def __init__(self,json_path : str, perf_out_path : str ):
         ctx = multiprocessing.get_context('spawn')
         self.Process = ctx.Process
+        self.lock = ctx.Lock()
         self.subProcList = []
         self.cfg_json_path = json_path
         self.task_groups = []
         self.m_totalKernels = []
+        self.endSignal = ctx.Manager().Value(ctypes.c_int,0)
+        self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,perf_out_path))
         
     def _createSubProc(self,func,*params) :
         p = self.Process(target = func, args = (*params,))
@@ -220,7 +248,7 @@ class ParallelCompileTaskManager :
             s.join()
         self.subProcList.clear()
     
-    def _get_kernelargMatmul(self,maxLen = -1) -> List[KernelArgMatmul] : 
+    def _get_kernelargMatmul(self,st = 0,maxLen = -1) -> List[KernelArgMatmul] : 
         import json
         with open(self.cfg_json_path, 'r') as file:
             json_data = json.load(file)
@@ -230,10 +258,11 @@ class ParallelCompileTaskManager :
         currLen = 0
         if maxLen < 0:
             maxLen = len(cfgs)
-        for config in cfgs :
-            if currLen >= maxLen :
+        for i in range(st,st + maxLen) :
+            if currLen >= maxLen or i >= len(cfgs):
                 break
             currLen+=1
+            config = cfgs[i]
             arg = KernelArgMatmul(config[kw.KEY_M],config[kw.KEY_N],config[kw.KEY_K], 
                                 EnumKernelDType(config[kw.KEY_DTYPE_A]), 
                                 EnumKernelDType(config[kw.KEY_DTYPE_B]),
@@ -262,41 +291,24 @@ class ParallelCompileTaskManager :
             
         return kernelArgs
     
-    def run(self, maxProcess = 10, json_cfgs_limit = -1) :
-        kernelConfigs = self._get_kernelargMatmul(maxLen=json_cfgs_limit)
+    def run(self, maxProcess = 10, st = 0, json_cfgs_limit = -1, needCompile = True, needPerfTest = True) :
+        kernelConfigs = self._get_kernelargMatmul(st = st, maxLen = json_cfgs_limit)
         procCount = 0
         CFG_COUNT = len(kernelConfigs)
-        for i in range(0,CFG_COUNT) :
-            sct = SerialCompileTask()
-            self._createSubProc(sct.compile_kernels,kernelConfigs,i,i+1)
-            procCount += 1
-            self.task_groups.append(sct)
-            if procCount >= maxProcess :
-                self._waitAll()
-                print(f"========= Wating for Compile tasks [{i}/{CFG_COUNT}]  ============")
-                procCount = 0
-        if len(self.subProcList) > 0 :
-            self._waitAll()
-            print(f"========= All Compile tasks Finished [{CFG_COUNT}]  ============")
-
+        if needPerfTest:
+            self.perfProc.start()
         
-    def getResults(self) -> List[Tuple[KernelArgMatmul,UserInputs,CompiledKernel]]:
-        if len(self.m_totalKernels) <= 0:
-            pklFiles = glob.glob(PathManager().pikle_dir() + '/*.pkl',recursive=True)
-            # 输出所有找到的文件路径
-            for pkl in pklFiles:
-                arr = deserialize_from_file(pkl)
-                self.m_totalKernels += arr
-            print(f"====== Glob .pkl files : {len(pklFiles)}, Valid Kernels : {len(self.m_totalKernels)} ========")
-                
-            for pkl in pklFiles:
-                try:
-                    os.remove(pkl)
-                    print(f"deleted: {pkl}")
-                except Exception as e:
-                    print(f"exception occur when del {pkl}: {e}")
-        for t in self.m_totalKernels :
-            print(f"{t[1].hsacoPath},  {t[1].kernelFuncName}")
-        return self.m_totalKernels
-    
-    
+        if needCompile :
+            for i in range(0,CFG_COUNT) :
+                sct = SerialCompileTask()
+                self._createSubProc(sct.compile_kernels,self.lock,kernelConfigs,i,i+1)
+                procCount += 1
+                self.task_groups.append(sct)
+                if procCount >= maxProcess or i == CFG_COUNT-1:
+                    print(f"========= Wating for Compile tasks [{i+1}/{CFG_COUNT}]  ============")
+                    self._waitAll()
+                    procCount = 0
+            print(f"========= All Compile tasks Finished [{CFG_COUNT}] ! ============")
+        self.endSignal.value = 1
+        if needPerfTest :
+            self.perfProc.join()

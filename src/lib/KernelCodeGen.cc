@@ -134,16 +134,16 @@ bool secondLowering(mlir::ModuleOp& mod, mlir::MLIRContext& context) {
 
 bool KernelCodeGenerator::lowering(mlir::ModuleOp& mod) {
   // mod.dump();
-  llvm::outs() << " === start mlir =====\n";llvm::outs().flush();mod->dump();
+  LOG_DEBUG(" === start mlir =====\n",mod) ;
   
   transforms(mod, context, HIP_BITCODE_PATH , arch);
-  llvm::outs() << " === after transforms =====\n";llvm::outs().flush();mod->dump();
+  LOG_DEBUG(" === after transforms =====\n",mod) ;
 
   firstLowering(mod, context);
-  llvm::outs() << " === after firstLowering =====\n";llvm::outs().flush();mod->dump();
+  LOG_DEBUG(" === after firstLowering =====\n",mod) ;
 
   secondLowering(mod, context);
-  llvm::outs() << " === after secondLowering =====\n";llvm::outs().flush();mod->dump();
+  LOG_DEBUG(" === after secondLowering =====\n",mod) ;
   
   return true;
 }
@@ -170,7 +170,7 @@ std::string KernelCodeGenerator::translate(mlir::ModuleOp& mod) {
   // std::tuple<std::string, std::string> result = translateLLVMIRToHSACO(llvmIR, "gfx" + arch, gfx_triple, gfx_features);
   // return std::get<1>(result);
 #endif
-  std::cout << "\n====llvmIR\n" << llvmIR << std::endl;
+  // std::cout << "\n====llvmIR\n" << llvmIR << std::endl;
 
 #if 0
   // test insert 

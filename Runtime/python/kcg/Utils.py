@@ -46,7 +46,7 @@ def deserialize_from_file(pkl_path) :
             temp = pickle.load(f)  # 进行反序列化
         except EOFError as e:
             print("EOF Error!")
-            return None
+            return []
         return temp
 
 @functools.lru_cache()
