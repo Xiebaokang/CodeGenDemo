@@ -28,6 +28,12 @@ struct CompareFunc {
   }
 };
 
+struct BufferCompare {
+  bool operator()(const mlir::Value& buf0, const mlir::Value& buf1) const {
+    return buf0.getAsOpaquePointer() < buf1.getAsOpaquePointer();
+  }
+};
+
 namespace Analyzer {
   std::vector<int64_t> getParallelNumber(mlir::affine::AffineParallelOp parallelLevel, int64_t& totalNumber);
   int64_t getThreadPerBlock(mlir::affine::AffineParallelOp parallelLevel);

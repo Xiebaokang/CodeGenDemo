@@ -158,14 +158,15 @@ struct NVVMMetadata {
 
 /************* attribute names & other naming rules ***********/ 
 
-#define AttrKernelFunc    "nvvm.kernel"
-#define AttrVisibility    "sym_visibility" 
-#define AttrExternLib     "kcg.externlibs"
-#define AttrRootFunc      "kcg.rootfunc"
-#define AttrKernelType    "kcg.kerneltype"
-#define AttrDescription   "kcg.desc"
-#define AttrGridDim       "func.grid.dim"
-#define AttrBlockDim      "func.block.dim"
+#define AttrKernelFunc     "nvvm.kernel"
+#define AttrVisibility     "sym_visibility" 
+#define AttrExternLib      "kcg.externlibs"
+#define AttrRootFunc       "kcg.rootfunc"
+#define AttrKernelType     "kcg.kerneltype"
+#define AttrDescription    "kcg.desc"
+#define AttrGridDim        "func.grid.dim"
+#define AttrBlockDim       "func.block.dim"
+#define AttrBufDescription "kcg.bufDesc"
 
 #define SHM_VAR_NAME(i) (std::string("kcg_shm")+std::to_string(i))
 
@@ -199,6 +200,12 @@ struct NVVMMetadata {
 #define  KEY_LOCAL_SPLIT_U     "LOCAL_SPLIT_U"
 #define  KEY_BLOCK_MAPPING     "BLOCK_MAPPING"
 #define  KEY_GLOB_STORE_WIDTH    "GLOB_STORE_WIDTH"
+// added
+#define KEY_UNROLL_NUM            "UNROLL_NUM"
+#define KEY_REG_PREFETCH          "REG_PREFETCH"
+#define KEY_SHARED_PREFETCH       "SHARED_PREFETCH"
+#define KEY_LOAD_CONTINUOUS       "LOAD_CONTINUOUS"
+#define KEY_REDUCE_C_CONTINUOUS   "REDUCE_C_CONTINUOUS"
 
 /****************** other macro ******************** */
 

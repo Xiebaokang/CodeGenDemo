@@ -20,7 +20,7 @@ struct Optimizer {
 };
 
 struct MatmulConfigUtils{
-  explicit MatmulConfigUtils(const std::map<std::string,int>& config);
+  explicit MatmulConfigUtils(const std::map<std::string, int>& config);
   int BM ;
   int BN ;
   int BK ;
@@ -29,8 +29,6 @@ struct MatmulConfigUtils{
   int BLOCK_Y;  // blockDimY
   int BLOCK_X;  // blockDimX
   int THREAD_NUM;  // block 内的线程数
-  int SHARED_SIZE_A;  // shm size
-  int SHARED_SIZE_B;
   int GLOB_LOAD_ROW_WIDTH_A;
   int GLOB_LOAD_ROW_WIDTH_B;
   int BLOCK_REPEAT_A;  // 离散化时，warp处理区域的分散次数
@@ -38,6 +36,12 @@ struct MatmulConfigUtils{
   int BLOCK_REPEAT_B;
   int WARP_REPEAT_B;
   int GLOB_STORE_ROW_WIDTH;
+  int GLOB_STORE_COL_THREAD_NUM;
+  int GLOB_STORE_ROW_THREAD_NUM;
+  int GLOB_LOAD_COL_THREAD_NUM_A;
+  int GLOB_LOAD_COL_THREAD_NUM_B;
+  int GLOB_LOAD_ROW_THREAD_NUM_A;
+  int GLOB_LOAD_ROW_THREAD_NUM_B;
 };
 
 struct MatmulOptimizer : Optimizer {
@@ -50,17 +54,17 @@ struct MatmulOptimizer : Optimizer {
   virtual void applyOptimzer(mlir::ModuleOp& module, std::map<std::string, int> config) override;
 
   // mlir::AffineMap getAffineMap(const std::string& mapIdentifier, mlir::OpBuilder& builder, std::map<std::string, int> config);
-  mlir::AffineMap getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
-  mlir::AffineMap getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
-  mlir::AffineMap getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
-  mlir::AffineMap getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getGlobToTempMapA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getGlobToTempMapB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getTempToSharedMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getTempToSharedMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getSharedToRegMapSMA(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getSharedToRegMapSMB(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getCalculateMapReg(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getRegToGlobMapC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
   mlir::AffineMap getRegToSharedMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
-  mlir::AffineMap getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
-  mlir::AffineMap getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config, bool isContinuous=true);
+  mlir::AffineMap getReduceMapSMC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
+  mlir::AffineMap getReduceMapRegC(mlir::OpBuilder& builder, const std::map<std::string, int>& config);
 
   void clear() {
     matmuls.clear();

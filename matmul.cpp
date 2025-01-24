@@ -44,8 +44,6 @@ __device__ __forceinline__ void VecCpy<1>(float* a, float* b) {
   (reinterpret_cast<float*>(a)[0]) = (reinterpret_cast<float*>(b)[0]);
 } 
 
-
-/*mine method*/
 template <
   const int BM,
   const int BN,
@@ -70,7 +68,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul(float* A, float* B, float* C, const int M, const int N, const int K) {
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
   const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
@@ -358,14 +356,13 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
   // regc reduce
   if (LOCAL_SPLIT_U > 1) {
     // reg_c -> shared
+    // __syncthreads();
     const int LDS_C_STRIDE = BM * BN;
     const int GLOB_STORE_TOTAL_WIDTH = LDS_C_STRIDE / THREAD_NUM;   // 3072 / 256 = 12
-    const int GLOB_STORE_NUM = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH;   // 12 / 6 = 2
-    const int GLOB_STORE_REAR_WIDTH = GLOB_STORE_TOTAL_WIDTH % GLOB_STORE_WIDTH;   // 12 % 6 = 0
-    const int GLOB_STORE_ROW_WIDTH = (THREAD_NUM / BM) * GLOB_STORE_WIDTH;   // (256 / 64) * 6 = 24
+    const int GLOB_STORE_NUM = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH;   // 12 / 2 = 6
 
-    const int sh_load_row = tid / (THREAD_NUM / BM);   // [0, 64]
-    const int sh_load_col = tid % (THREAD_NUM / BM);   // [0, 4]
+    const int GLOB_STORE_COL_THREAD_NUM = BN / GLOB_STORE_WIDTH;
+    const int GLOB_STORE_ROW_THREAD_NUM = THREAD_NUM / GLOB_STORE_COL_THREAD_NUM;
 
     #pragma unroll
     for (int i0=0; i0<BLOCK_REPEAT_A; i0++) {
@@ -394,25 +391,20 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
     for (int i=0; i<LOCAL_SPLIT_U; i++) {
       #pragma unroll
       for (int j=0; j<GLOB_STORE_NUM; j++) {
-        VecCpy<GLOB_STORE_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                       j * GLOB_STORE_WIDTH], 
-                            &LDSMemory[i * LDS_C_STRIDE + 
-                                       sh_load_row * BN + 
-                                       j * GLOB_STORE_ROW_WIDTH + 
-                                       sh_load_col * GLOB_STORE_WIDTH]);
-      }
-      if (GLOB_STORE_REAR_WIDTH) {
-        VecCpy<GLOB_STORE_REAR_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                            GLOB_STORE_NUM * GLOB_STORE_WIDTH], 
-                                 &LDSMemory[i * LDS_C_STRIDE + 
-                                            sh_load_row * BN +
-                                            GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
-                                            sh_load_col * GLOB_STORE_REAR_WIDTH]);
-      }
-      if (i > 0) {
-        #pragma unroll
-        for (int k=0; k<GLOB_STORE_TOTAL_WIDTH; k++) {
-          regC[k] += regC[i * GLOB_STORE_TOTAL_WIDTH + k];
+        const int sh_store_col_c = (tid + j * THREAD_NUM) % GLOB_STORE_COL_THREAD_NUM;
+        const int sh_store_row_c = (tid + j * THREAD_NUM) / GLOB_STORE_COL_THREAD_NUM;
+        if (i == 0) {
+          VecCpy<GLOB_STORE_WIDTH>(&regC[j * GLOB_STORE_WIDTH], 
+                              &LDSMemory[i * LDS_C_STRIDE + 
+                                        sh_store_row_c * BN + 
+                                        sh_store_col_c * GLOB_STORE_WIDTH]);
+        } else {
+          #pragma unroll
+          for (int k=0; k<GLOB_STORE_WIDTH; k++) {
+            regC[j*GLOB_STORE_WIDTH+k] += LDSMemory[i * LDS_C_STRIDE + 
+                                                    sh_store_row_c * BN + 
+                                                    sh_store_col_c * GLOB_STORE_WIDTH + k];
+          }
         }
       }
     }
@@ -420,16 +412,12 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
     // reg -> global
     #pragma unroll
     for (int i=0; i<GLOB_STORE_NUM; i++) {
-      VecCpy<GLOB_STORE_WIDTH>(&C[(by * BM + sh_load_row) * N + 
-                                  bx * BN + i * GLOB_STORE_ROW_WIDTH + sh_load_col * GLOB_STORE_WIDTH], 
+      const int sh_store_col_c = (tid + i * THREAD_NUM) % GLOB_STORE_COL_THREAD_NUM;
+      const int sh_store_row_c = (tid + i * THREAD_NUM) / GLOB_STORE_COL_THREAD_NUM;
+      VecCpy<GLOB_STORE_WIDTH>(&C[(by * BM + sh_store_row_c) * N + 
+                                  bx * BN + sh_store_col_c * GLOB_STORE_WIDTH], 
                             &regC[i * GLOB_STORE_WIDTH]);
     }
-    if (GLOB_STORE_REAR_WIDTH) {
-      VecCpy<GLOB_STORE_REAR_WIDTH>(&C[(by * BM + sh_load_row) * N + 
-                                       bx * BN + GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + sh_load_col * GLOB_STORE_REAR_WIDTH], 
-                                 &regC[GLOB_STORE_NUM * GLOB_STORE_WIDTH]);
-    }
-
   } else {
     #pragma unroll
     for (int i0=0; i0<BLOCK_REPEAT_A; i0++) {
@@ -442,9 +430,9 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
             #pragma unroll 
             for (int k=0; k<THREAD_SCATTER_WIDTH_A; k++) {
               VecCpy<THREAD_SCATTER_WIDTH_B>(&C[(by * BM + (i0 * BLOCK_LAYOUT_M + warp_y) * WARP_LAYOUT_M * WARP_SCATTER_WIDTH_A + (j0 * WARP_LAYOUT_M + lane_y) * THREAD_SCATTER_WIDTH_A + k) * N + 
-                                              bx * BN + (i1 * BLOCK_LAYOUT_N + warp_x) * WARP_LAYOUT_N * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_N + lane_x) * THREAD_SCATTER_WIDTH_B], 
-                                                &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
-                                                      i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
+                                               bx * BN + (i1 * BLOCK_LAYOUT_N + warp_x) * WARP_LAYOUT_N * WARP_SCATTER_WIDTH_B + (j1 * WARP_LAYOUT_N + lane_x) * THREAD_SCATTER_WIDTH_B], 
+                                        &regC[(i0 * WARP_SCATTER_WIDTH_A + j0 * THREAD_SCATTER_WIDTH_A + k) * TN + 
+                                               i1 * WARP_SCATTER_WIDTH_B + j1 * THREAD_SCATTER_WIDTH_B]);
             }
           }
         }
@@ -452,6 +440,8 @@ __global__ void __launch_bounds__(256) matmul(float* A, float* B, float* C, cons
     }
   }
 }
+
+
 
 template <
   const int BM,
@@ -477,7 +467,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul_1(float* A, float* B, float* C, const int M, const int N, const int K) {
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
   const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
@@ -765,6 +755,7 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
   // regc reduce
   if (LOCAL_SPLIT_U > 1) {
     // reg_c -> shared
+    // __syncthreads();
     const int LDS_C_STRIDE = BM * BN;
     const int GLOB_STORE_TOTAL_WIDTH = LDS_C_STRIDE / THREAD_NUM;   // 3072 / 256 = 12
     const int GLOB_STORE_NUM = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH;   // 12 / 2 = 6
@@ -773,8 +764,6 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
 
     const int sh_load_row = tid / (THREAD_NUM / BM);   // [0, 64]
     const int sh_load_col = tid % (THREAD_NUM / BM);   // [0, 4]
-
-
 
     #pragma unroll
     for (int i0=0; i0<BLOCK_REPEAT_A; i0++) {
@@ -798,44 +787,40 @@ __global__ void __launch_bounds__(256) matmul_1(float* A, float* B, float* C, co
     }
     __syncthreads();
 
+    #pragma unroll
+    for (int j=0; j<GLOB_STORE_NUM; j++) {
+      VecCpy<GLOB_STORE_WIDTH>(&regC[j * GLOB_STORE_WIDTH], 
+                          &LDSMemory[sh_load_row * BN + 
+                                    j * GLOB_STORE_ROW_WIDTH + 
+                                    sh_load_col * GLOB_STORE_WIDTH]);
+    }
+    if (GLOB_STORE_REAR_WIDTH) {
+      VecCpy<GLOB_STORE_REAR_WIDTH>(&regC[GLOB_STORE_NUM * GLOB_STORE_WIDTH], 
+                               &LDSMemory[sh_load_row * BN + 
+                                          GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
+                                          sh_load_col * GLOB_STORE_REAR_WIDTH]);
+    }
+ 
     // shared ->reg
     #pragma unroll
-    for (int i=0; i<LOCAL_SPLIT_U; i++) {
+    for (int i=1; i<LOCAL_SPLIT_U; i++) {
       #pragma unroll
       for (int j=0; j<GLOB_STORE_NUM; j++) {
-        if (i == 0 ) {
-          VecCpy<GLOB_STORE_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                        j * GLOB_STORE_WIDTH], 
-                              &LDSMemory[i * LDS_C_STRIDE + 
-                                        sh_load_row * BN + 
-                                        j * GLOB_STORE_ROW_WIDTH + 
-                                        sh_load_col * GLOB_STORE_WIDTH]);
-        } else {
-          #pragma unroll
-          for (int k=0; k<GLOB_STORE_WIDTH; k++) {
-            regC[j*GLOB_STORE_WIDTH+k] += LDSMemory[i * LDS_C_STRIDE + 
-                                                    sh_load_row * BN + 
-                                                    j * GLOB_STORE_ROW_WIDTH + 
-                                                    sh_load_col * GLOB_STORE_WIDTH + k];
-          }
+        #pragma unroll
+        for (int k=0; k<GLOB_STORE_WIDTH; k++) {
+          regC[j*GLOB_STORE_WIDTH+k] += LDSMemory[i * LDS_C_STRIDE + 
+                                                  sh_load_row * BN + 
+                                                  j * GLOB_STORE_ROW_WIDTH + 
+                                                  sh_load_col * GLOB_STORE_WIDTH + k];
         }
       }
       if (GLOB_STORE_REAR_WIDTH) {
-        if (i == 0) {
-          VecCpy<GLOB_STORE_REAR_WIDTH>(&regC[i * GLOB_STORE_TOTAL_WIDTH + 
-                                              GLOB_STORE_NUM * GLOB_STORE_WIDTH], 
-                                  &LDSMemory[i * LDS_C_STRIDE + 
-                                              sh_load_row * BN +
-                                              GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
-                                              sh_load_col * GLOB_STORE_REAR_WIDTH]);
-        } else {
-          #pragma unroll
-          for (int k=0; k<GLOB_STORE_WIDTH; k++) {
-            regC[GLOB_STORE_NUM * GLOB_STORE_WIDTH + k] += LDSMemory[i * LDS_C_STRIDE + 
-                                                                     sh_load_row * BN +
-                                                                     GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
-                                                                     sh_load_col * GLOB_STORE_REAR_WIDTH + k];
-          }
+        #pragma unroll
+        for (int k=0; k<GLOB_STORE_WIDTH; k++) {
+          regC[GLOB_STORE_NUM * GLOB_STORE_WIDTH + k] += LDSMemory[i * LDS_C_STRIDE + 
+                                                                    sh_load_row * BN +
+                                                                    GLOB_STORE_NUM * GLOB_STORE_ROW_WIDTH + 
+                                                                    sh_load_col * GLOB_STORE_REAR_WIDTH + k];
         }
       }
     }
@@ -900,7 +885,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul_2(float* A, float* B, float* C, const int M, const int N, const int K) {
   // 顺序取 glob to shared
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
@@ -951,12 +936,6 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
 
   const int GLOB_LOAD_ROW_THREAD_NUM_A = THREAD_NUM / GLOB_LOAD_COL_THREAD_NUM_A;
   const int GLOB_LOAD_ROW_THREAD_NUM_B = THREAD_NUM / GLOB_LOAD_COL_THREAD_NUM_B;
-
-  const int sh_load_row_a = tid / GLOB_LOAD_COL_THREAD_NUM_A;
-  const int sh_load_row_b = tid / GLOB_LOAD_COL_THREAD_NUM_B;
-
-  const int sh_load_col_a = tid % GLOB_LOAD_COL_THREAD_NUM_A;
-  const int sh_load_col_b = tid % GLOB_LOAD_COL_THREAD_NUM_B;
 
   // mid temp reg
   float tempA[GLOB_LOAD_TOTAL_WIDTH_A];  // 8
@@ -1111,7 +1090,7 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
       }
       __syncthreads();
       write_buffer_id ^= 1;
-    }
+    // }
 
     // last computing result
     #pragma unroll
@@ -1152,6 +1131,7 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
   // regc reduce
   if (LOCAL_SPLIT_U > 1) {
     // reg_c -> shared
+    // __syncthreads();
     const int LDS_C_STRIDE = BM * BN;
     const int GLOB_STORE_TOTAL_WIDTH = LDS_C_STRIDE / THREAD_NUM;   // 3072 / 256 = 12
     const int GLOB_STORE_NUM = GLOB_STORE_TOTAL_WIDTH / GLOB_STORE_WIDTH;   // 12 / 2 = 6
@@ -1181,25 +1161,40 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
     }
     __syncthreads();
 
+    // if (tid == 0) {
+    //   printf("\n");
+    //   for (int i=0; i<2; i++) {
+    //     for (int j=0; j<BM; j++) {
+    //       // printf("[%d]  ", i*BM+j);
+    //       for (int k=0; k<BN; k++) {
+    //         printf("%f ", LDSMemory[i*LDS_C_STRIDE + j * BN + k]);
+    //       }
+    //       printf("\n");
+    //     }
+    //   }
+    // }
+
+    #pragma unroll
+    for (int j=0; j<GLOB_STORE_NUM; j++) {
+      const int sh_store_col_c = (tid + j * THREAD_NUM) % GLOB_STORE_COL_THREAD_NUM;
+      const int sh_store_row_c = (tid + j * THREAD_NUM) / GLOB_STORE_COL_THREAD_NUM;
+        VecCpy<GLOB_STORE_WIDTH>(&regC[j * GLOB_STORE_WIDTH], 
+                            &LDSMemory[sh_store_row_c * BN + 
+                                       sh_store_col_c * GLOB_STORE_WIDTH]);
+    }
+
     // shared ->reg
     #pragma unroll
-    for (int i=0; i<LOCAL_SPLIT_U; i++) {
+    for (int i=1; i<LOCAL_SPLIT_U; i++) {
       #pragma unroll
       for (int j=0; j<GLOB_STORE_NUM; j++) {
         const int sh_store_col_c = (tid + j * THREAD_NUM) % GLOB_STORE_COL_THREAD_NUM;
         const int sh_store_row_c = (tid + j * THREAD_NUM) / GLOB_STORE_COL_THREAD_NUM;
-        if (i == 0) {
-          VecCpy<GLOB_STORE_WIDTH>(&regC[j * GLOB_STORE_WIDTH], 
-                              &LDSMemory[i * LDS_C_STRIDE + 
-                                        sh_store_row_c * BN + 
-                                        sh_store_col_c * GLOB_STORE_WIDTH]);
-        } else {
-          #pragma unroll
-          for (int k=0; k<GLOB_STORE_WIDTH; k++) {
-            regC[j*GLOB_STORE_WIDTH+k] += LDSMemory[i * LDS_C_STRIDE + 
-                                                    sh_store_row_c * BN + 
-                                                    sh_store_col_c * GLOB_STORE_WIDTH + k];
-          }
+        #pragma unroll
+        for (int k=0; k<GLOB_STORE_WIDTH; k++) {
+          regC[j*GLOB_STORE_WIDTH+k] += LDSMemory[i * LDS_C_STRIDE + 
+                                                  sh_store_row_c * BN + 
+                                                  sh_store_col_c * GLOB_STORE_WIDTH + k];
         }
       }
     }
@@ -1213,6 +1208,18 @@ __global__ void __launch_bounds__(256) matmul_2(float* A, float* B, float* C, co
                                   bx * BN + sh_store_col_c * GLOB_STORE_WIDTH], 
                             &regC[i * GLOB_STORE_WIDTH]);
     }
+
+    // if (tid == 0) {
+    //   printf("\n");
+    //   for (int j=0; j<BM; j++) {
+    //     for (int k=0; k<BN; k++) {
+    //       printf("%f ", C[j * BN + k]);
+    //     }
+    //     printf("\n");
+    //   }
+    // }
+
+
   } else {
     #pragma unroll
     for (int i0=0; i0<BLOCK_REPEAT_A; i0++) {
@@ -1260,7 +1267,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul_3(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul_3(float* A, float* B, float* C, const int M, const int N, const int K) {
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
   const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
@@ -1622,7 +1629,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul_4(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul_4(float* A, float* B, float* C, const int M, const int N, const int K) {
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
   const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
@@ -1986,7 +1993,7 @@ template <
   const int BLOCK_MAPPING,
   const int WARP_SIZE,
   const int GLOB_STORE_WIDTH>
-__global__ void __launch_bounds__(256) matmul_5(float* A, float* B, float* C, const int M, const int N, const int K) {
+__global__ void  __launch_bounds__(512) matmul_5(float* A, float* B, float* C, const int M, const int N, const int K) {
   const int BLOCK_Y = BM / TM;
   const int BLOCK_X = BN / TN;
   const int THREAD_NUM = BLOCK_X * BLOCK_Y * LOCAL_SPLIT_U;
@@ -2317,18 +2324,6 @@ void display(T *host, int len) {
 }
 
 
-template <typename T>
-void hostMatmul(T *A, T *B, T *C, int M, int N, int K) {
-    // host矩阵乘
-    for (int i=0; i<M; i++) {
-      for (int j=0; j<N; j++) {
-        for (int k=0; k<K; k++) {
-          C[i * N + j] += A[k * M + i] * B[k * N + j];
-        }
-      }
-    }
-}
-
 __global__ void gemm_kernel(float* A, float* B, float* C, int m, int n, int k) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2338,6 +2333,29 @@ __global__ void gemm_kernel(float* A, float* B, float* C, int m, int n, int k) {
             sum += A[i*m+row] * B[i*n+col];
         }
         C[row * n + col] = sum;
+    }
+}
+
+__global__ void verify_kernel(float* C, float* D, int m, int n) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < m && col < n) {
+      float sub = C[row * n + col] - D[row * n + col];
+      if (sub >= 0.00001f || sub <= -0.00001f) {
+        printf("error index: (y=%d, x=%d)\nerrer mine: %f   error verify: %f\nsub: %f\n", row, col, C[row * n + col], D[row * n + col], C[row * n + col]-D[row * n + col]);
+      }
+    }
+}
+
+template <typename T>
+void hostMatmul(T *A, T *B, T *C, int M, int N, int K) {
+    // host矩阵乘
+    for (int i=0; i<M; i++) {
+      for (int j=0; j<N; j++) {
+        for (int k=0; k<K; k++) {
+          C[i * N + j] += A[k * M + i] * B[k * N + j];
+        }
+      }
     }
 }
 
@@ -2373,20 +2391,20 @@ int main() {
   hipSetDevice(device_id);
 
   const int M = 1024;
-  const int N = 1024;
+  const int N = 1056;
   const int K = 1024;
 
   const int BM = 64;
-  const int BN = 64;
+  const int BN = 48;
   const int BK = 32;
   const int TM = 4;
-  const int TN = 4;
+  const int TN = 6;
 
   const int GLOB_LOAD_WIDTH_A = 2;
   const int GLOB_LOAD_WIDTH_B = 2;
 
   const int BLOCK_LAYOUT_M = 2;   // BM / TM / WARP_LAYOUT_M
-  const int BLOCK_LAYOUT_N = 2;    // BN / TN / WARP_LAYOUT_N
+  const int BLOCK_LAYOUT_N = 1;    // BN / TN / WARP_LAYOUT_N
   const int WARP_LAYOUT_M = 8;
   const int WARP_LAYOUT_N = 8;
 
@@ -2395,7 +2413,7 @@ int main() {
   const int THREAD_SCATTER_WIDTH_A = 2;
   const int THREAD_SCATTER_WIDTH_B = 2;
 
-  const int LOCAL_SPLIT_U = 1;   /*2*/
+  const int LOCAL_SPLIT_U = 2;   /*2*/
   const int BLOCK_MAPPING = 8;
   const int WARP_SIZE = 64;
   const int GLOB_STORE_WIDTH = 2;
@@ -2409,10 +2427,14 @@ int main() {
     D[i] = 0.0f;
   }
   for (int i = 0; i < M * K; i++) {
-    A[i] = (rand() % 50000) * 0.01;
+    // if (i % 2) A[i] = 0.0f;
+    // else A[i] = 1.0f;
+    A[i] = (rand() % 1000) * 0.01f;
   } 
   for (int i = 0; i < N * K; i++) {
-    B[i] = (rand() % 50000) * 0.01;
+    // if (i % 2) B[i] = 0.0f;
+    // else B[i] = 1.0f;
+    B[i] = (rand() % 1000) * 0.01f;
   }
 
   float *DA, *DB, *DC, *DD;
@@ -2431,41 +2453,41 @@ int main() {
 
 
   std::vector<float> costs;
-  for (int i=0; i<10; i++) {
+  for (int i=0; i<1; i++) {
     // 执行内核函数
     hipEvent_t startEvent, stopEvent;
     hipEventCreate(&startEvent);
     hipEventCreate(&stopEvent);
     hipEventRecord(startEvent, 0);
 
-    // origin
-    // matmul<BM, BN BK, TM, TN, 
-    //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
-    //   BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
-    //   WARP_LAYOUT_M, WARP_LAYOUT_N, 
-    //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
-    //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
-    //   LOCAL_SPLIT_U, BLOCK,_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
-
-    // 在origin的基础上修改，修改splitu存储方式，直接从shared加到reg上
-    // matmul_1<BM, BN, BK, TM, TN, 
+    // 前面的加载使用非连续，后面的reduceC使用连续
+    // matmul<BM, BN, BK, TM, TN, 
     //   GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
     //   BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
     //   WARP_LAYOUT_M, WARP_LAYOUT_N, 
     //   WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
     //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
     //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
-    
-    // 在matmul_1的基础上修改，讲所有glob load的方式改为顺序load
-    // 这个有限制，GLOB_LOAD_WIDTH_A/B必须为BM/BN和GLOB_LOAD_TATOL_WIDTH_A/B的约数
-    // GLOB_STORE_WIDTH必须为BN和GLOB_LOAD_TATOL_WIDTH_C的约数
-    matmul_2<BM, BN, BK, TM, TN, 
+
+    // 在origin的基础上修改，修改splitu存储方式，直接从shared加到reg上
+    matmul_1<BM, BN, BK, TM, TN, 
       GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
       BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
       WARP_LAYOUT_M, WARP_LAYOUT_N, 
       WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
       THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
       LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
+    
+    // 在matmul_1的基础上修改，讲所有glob load的方式改为顺序load
+    // 这个有限制，GLOB_LOAD_WIDTH_A/B必须为BM/BN和GLOB_LOAD_TATOL_WIDTH_A/B的约数
+    // GLOB_STORE_WIDTH必须为BN和GLOB_LOAD_TATOL_WIDTH_C的约数
+    // matmul_2<BM, BN, BK, TM, TN, 
+      // GLOB_LOAD_WIDTH_A, GLOB_LOAD_WIDTH_B,
+      // BLOCK_LAYOUT_M, BLOCK_LAYOUT_N,
+      // WARP_LAYOUT_M, WARP_LAYOUT_N, 
+      // WARP_SCATTER_WIDTH_A, WARP_SCATTER_WIDTH_B, 
+      // THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
+      // LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
     // 在matmul_2的基础上修改，将L2 cache的方式修改为s形
     // matmul_3<BM, BN, BK, TM, TN, 
@@ -2495,7 +2517,9 @@ int main() {
     //   THREAD_SCATTER_WIDTH_A, THREAD_SCATTER_WIDTH_B,
     //   LOCAL_SPLIT_U, BLOCK_MAPPING, WARP_SIZE, GLOB_STORE_WIDTH><<<grid_size, block_size>>>(DA, DB, DC, M, N, K);
 
+    // gemm_kernel<<<dimGrid, dimBlock>>>(DA, DB, DC, M, N, K);
     gemm_kernel<<<dimGrid, dimBlock>>>(DA, DB, DD, M, N, K);
+    verify_kernel<<<dimGrid, dimBlock>>>(DC, DD, M, N);
 
     hipEventRecord(stopEvent, 0);
     hipEventSynchronize(stopEvent);
@@ -2509,19 +2533,21 @@ int main() {
   float time = costs[costs.size()/2];
   double tflops = (2 * static_cast<uint64_t>(M) * N * K) / (time / 1000) / 1e12;
 
-  hipMemcpy(C, DC, M * N * sizeof(float), hipMemcpyDeviceToHost);
-  hipMemcpy(D, DD, M * N * sizeof(float), hipMemcpyDeviceToHost);
+  // hipMemcpy(C, DC, M * N * sizeof(float), hipMemcpyDeviceToHost);
+  // hipMemcpy(D, DD, M * N * sizeof(float), hipMemcpyDeviceToHost);
   std::cout << "time cost: " << time << "ms\n";
   std::cout << "tflops: " << tflops << std::endl;
   // display(C, M * N);
   // hostMatmul(A, B, D, M, N, K);
-  verify(D, C, M, N);
+  // verify(D, C, M, N);
 
   hipFree(DA);
   hipFree(DB);
   hipFree(DC);
+  hipFree(DD);
   delete[] A;
   delete[] B;
   delete[] C;
+  delete[] D;
   return 0;
 }
