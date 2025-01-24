@@ -18,7 +18,7 @@ class CompiledKernel:
         
     def run(self,*args,**kwargs):
         if self.m_launcher is not None:
-            print("[D] run")
+            # print("[D] run")
             self.m_launcher.launchKernel(*args)
         
     

@@ -28,7 +28,7 @@ def make_stub(kernelLibFile : KernelLibFile) -> str :
     so_cache_key = str(kernelLibFile.hash())
     so_cache_manager = FileCacheManager(so_cache_key)
     # so_name = f"{so_cache_key + kernelLibFile.m_kernelFuncName}.so"
-    so_name = f"{kernelLibFile.m_kernelFuncName}.so"
+    so_name = f"LaunHip_{kernelLibFile.signature_str()}.so"
     # retrieve stub from cache if it exists
     cache_path = so_cache_manager.get_file(so_name)
     if cache_path is None:
@@ -204,18 +204,18 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   if(!PyArg_ParseTuple(args, \"{format}\", &gridX, &gridY, &gridZ, &blockX,&blockY,&blockZ, &num_ctas, &clusterDimX, &clusterDimY, &clusterDimZ, &shared_memory, &_stream, &_function, &launch_enter_hook, &launch_exit_hook, &compiled_kernel{', ' + ', '.join(f"&_arg{i}" for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''})) {{
     return NULL;
   }}
-  printf("hiplauncher parsed : \\n");
-  printf("- gridX : %d \\n",gridX);
-  printf("- gridY : %d \\n",gridY);
-  printf("- gridZ : %d \\n",gridZ);
-  printf("- blockX : %d \\n",blockX);
-  printf("- blockY : %d \\n",blockY);
-  printf("- blockZ : %d \\n",blockZ);
-  printf("- num_ctas : %d \\n",num_ctas);
-  printf("- clusterDimX : %d \\n",clusterDimX);
-  printf("- clusterDimY : %d \\n",clusterDimY);
-  printf("- clusterDimZ : %d \\n",clusterDimZ);
-  printf("- shared_memory : %d \\n",shared_memory);
+  // printf("hiplauncher parsed : \\n");
+  // printf("- gridX : %d \\n",gridX);
+  // printf("- gridY : %d \\n",gridY);
+  // printf("- gridZ : %d \\n",gridZ);
+  // printf("- blockX : %d \\n",blockX);
+  // printf("- blockY : %d \\n",blockY);
+  // printf("- blockZ : %d \\n",blockZ);
+  // printf("- num_ctas : %d \\n",num_ctas);
+  // printf("- clusterDimX : %d \\n",clusterDimX);
+  // printf("- clusterDimY : %d \\n",clusterDimY);
+  // printf("- clusterDimZ : %d \\n",clusterDimZ);
+  // printf("- shared_memory : %d \\n",shared_memory);
   if (launch_enter_hook != Py_None) {{
     PyObject_CallObject(launch_enter_hook, args);
   }}
@@ -224,7 +224,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0] == "*" else "" for i, ty in kernelSignature.items()])};
   Py_BEGIN_ALLOW_THREADS;
-  printf("- call _launch function \\n");
+  // printf("- call _launch function \\n");
   _launch(gridX, gridY, gridZ, blockX, blockY, blockZ, num_ctas, clusterDimX, clusterDimY, clusterDimZ, shared_memory, (hipStream_t)_stream, (hipFunction_t)_function{', ' + ', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}"for i, ty in kernelSignature.items()) if len(kernelSignature) > 0 else ''});
   Py_END_ALLOW_THREADS;
 
@@ -301,7 +301,7 @@ class HIPLauncher :
         enterHookFunc = None
         exitHookFunc = None
         numCTAs = gridDims[0]*gridDims[1]*gridDims[2]
-        print(f"[Runtime] gridDims = {gridDims}, blockdims={blockDims} ")
+        # print(f"[Runtime] gridDims = {gridDims}, blockdims={blockDims} ")
         wrapper(gridDims[0],gridDims[1],gridDims[2],blockDims[0],blockDims[1],blockDims[2],
                 # m.num_ctas,
                 numCTAs,
@@ -314,6 +314,8 @@ class HIPLauncher :
                 self,*args )
 
         if wrapper is None :
-            print("[D] error cwrapper")
+            # print("[D] error cwrapper")
+            pass
         else:
-            print("[D] success cwrapper")
+            # print("[D] success cwrapper")
+            pass

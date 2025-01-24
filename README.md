@@ -35,56 +35,27 @@ ${project_folder}/bin/kcg_compiler > log.txt 2>&1
 </p>
 
 2. lib模式   
-参数配置：
-参见test.py中的该部分：
+入口点为 Runtime/python/kcg/testGetKernels.py
+config参数由用户输入的范围自动生成
 
+testGetKernels.py 使用说明：   
 ```python
-ts = TilingScheme()
-ts.BLOCK_SIZE_M= 64
-ts.BLOCK_SIZE_N=64
-ts.BLOCK_SIZE_K=16
-ts.THREAD_SIZE_M= 4
-ts.THREAD_SIZE_N= 4
-ts.VECTORIZE_WIDTH= 4
-ts.WARP_SIZE= 64 
-ts.BLOCK_LAYOUT_M= 4
-ts.BLOCK_LAYOUT_N= 1
-ts.WARP_LAYOUT_M= 4
-ts.WARP_LAYOUT_N= 16
-```
-问题规模目前固定为1024，位置：
-```python
-# runtime/python/kcg/CompiledKernelFactory.py:
-# 用户输入：hsacopath，kernel名字(通过amdgcn获取)，
-class CompiledKernelFactory :
-    @staticmethod
-    def getKernel(info : UserInputs) -> CompiledKernel:
-        if info.operatorKind==EnumOperator.Matmul :
-            signature = getMatmulSignature(info.dtype_0,info.dtype_1)
-            m,n,k = 1024,1024,1024
-            return CompiledKernel(
-                info.hsacoPath,
-                info.kernelFuncName,
-                info.sharedMem(m,n,k),
-                signature,
-                info.gridDims(m,n,k),
-                info.blockDims()
-            )
-        if info.operatorKind==EnumOperator.Convolution :
-            return None
-        if info.operatorKind==EnumOperator.Poll:
-            return None
-```
-以及test.py中：
-```python
-dim = 1024
-a = torch.rand(dim,dim,dtype=inConfig.dtype_0,device='cuda')
-b = torch.rand(dim,dim,dtype=inConfig.dtype_1,device='cuda')
-c = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
-d = torch.empty(dim,dim,dtype=inConfig.dtype_0,device='cuda')
-M, K = a.shape
-K, N = b.shape
-o.run(a,b,c)
+if __name__ == '__main__' :
+    from KCGTask import *
+    import multiprocessing 
+    from ConfigGenerator import *
+    PathManager.init()  # 路径管理器初始化。会在项目目录下建立 _cache,_dump,_pkls,_override 文件夹存放中间结果
+    json_path = '/home/xushilong/CodeGenDemo/cfg_cominations.json'  # 调优空间config json文件 （可以不存在，此时通过config_gen函数生成；也能指定一个已有的，此时不应再调用 config_gen）
+    perfPAth = '/home/xushilong/CodeGenDemo/perfRecord_2.log'  # perf结果的存放位置，会自动创建
+    config_gen(json_path)   # 生成调优空间config json文件。
+    tm =  ParallelTaskManager(json_path,perfPAth)   # 创建并行任务
+    tm.run(maxProcess=30,st = 780, json_cfgs_limit=-1,needCompile=True,needPerfTest=True)  # 启动。
+    #  maxProcess ： 用于compile的最大进程数
+    #  st ：从index为几的config开始处理。默认0
+    #  json_cfgs_limit ：最大处理数量，-1代表处理st之后的全部config
+    #  needCompile ：是否运行kernel生成   needPerfTest ： 是否运行perf测试   这两个参数可实现只执行perftest或只生成kernel
+    #  
+
 ```
 
 运行：
@@ -93,7 +64,7 @@ conda activate triton_rocm
 cd ${project_folder}/runtime/python 
 export PYTHONPATH=`pwd`
 cd ./kcg
-python test.py > log.log 2>&1
-# 测试性能： hipprof --pmc python test.py > log.log 2>&1
+python testGetKernels.py > log.log 2>&1
+
 ```
 
