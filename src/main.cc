@@ -319,9 +319,9 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
   std::vector<KernelInfo> kernels;
   std::string hsacoPath;
   Py_BEGIN_ALLOW_THREADS;
-  std::cout << "[pymod] start _compile" << std::endl;
+  // std::cout << "[pymod] start _compile" << std::endl;
   kernels = _compile(config);
-  std::cout << "[pymod] _compile success" << std::endl;
+  // std::cout << "[pymod] _compile success" << std::endl;
   Py_END_ALLOW_THREADS;
   Py_INCREF(Py_None);
   // return Py_None;
@@ -352,7 +352,7 @@ static PyObject* compile_kernel_matmul(PyObject* self, PyObject* args) {
     }
     PyTuple_SetItem(retArr, i, item);  // 将每个元素插入元组
   }
-  std::cout << "[pymod] ======== compile_kernel_matmul return " << std::endl;
+  // std::cout << "[pymod] ======== compile_kernel_matmul return " << std::endl;
   return retArr;
 }
 

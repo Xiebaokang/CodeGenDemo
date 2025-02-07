@@ -303,12 +303,12 @@ std::string generateAmdgcnAndHsacoFromLLIRFile(
     if (outasm.is_open()) {
         outasm << amdgcn;
         outasm.close();
-        std::cout << "write amdgcn success!" << std::endl;
+        // std::cout << "write amdgcn success!" << std::endl;
     } else {
-        std::cout << "write amdgcn error!" << std::endl;
+        // std::cout << "write amdgcn error!" << std::endl;
     }
-    std::cout << "amdgcnpath=" << amdgcnPath << std::endl;
-    std::cout << "hsacopath=" << hsacoPath << std::endl;
+    // std::cout << "amdgcnpath=" << amdgcnPath << std::endl;
+    // std::cout << "hsacopath=" << hsacoPath << std::endl;
     return hsacoPath;
 }
 

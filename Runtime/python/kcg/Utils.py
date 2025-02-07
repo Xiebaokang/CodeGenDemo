@@ -16,6 +16,7 @@ from typing import List,Type
 import setuptools
 import torch
 from typing import List,Tuple,Dict
+from datetime import datetime
 
 # TODO: is_hip shouldn't be here
 def is_hip():
@@ -202,7 +203,13 @@ def ToTorchType (t : EnumKernelDType) -> torch.dtype:
         return torch.float16
 
 def sizeof(t : EnumKernelDType) : # bytes
+    assert(t is not None)
     return int(t) % 30
+
+def printTime() :
+    now = datetime.now()
+    formattime = now.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"--------[ {formattime} ]------------")
 
 def get_kernel_name(src: str, pattern: str) -> str:
     '''
@@ -323,7 +330,6 @@ class ConfigKeywords :
     KEY_BLOCK_SIZE_K =         "BLOCK_SIZE_K"
     KEY_THREAD_SIZE_M =        "THREAD_SIZE_M"
     KEY_THREAD_SIZE_N =        "THREAD_SIZE_N"
-    KEY_VECTORIZE_WIDTH =      "VECTORIZE_WIDTH"
     KEY_WARP_SIZE =            "WARP_SIZE"
     KEY_BLOCK_LAYOUT_M =       "BLOCK_LAYOUT_M"
     KEY_BLOCK_LAYOUT_N =       "BLOCK_LAYOUT_N"
@@ -351,5 +357,26 @@ class ConfigKeywords :
     KEY_LOAD_CONTINUOUS =       "LOAD_CONTINUOUS"
     KEY_REDUCE_C_CONTINUOUS =   "REDUCE_C_CONTINUOUS"
     
+def get_dtype_from_int(dtype : int) :
+    if dtype == int( EnumKernelDType.float8) :
+        return EnumKernelDType.float8
+    if dtype == int( EnumKernelDType.float16) :
+        return EnumKernelDType.float16
+    if dtype == int( EnumKernelDType.float32) :
+        return EnumKernelDType.float32
+    if dtype == int( EnumKernelDType.float64) :
+        return EnumKernelDType.float64
+    if dtype == int( EnumKernelDType.float128) :
+        return EnumKernelDType.float128
+    if dtype == int( EnumKernelDType.int8) :
+        return EnumKernelDType.int8
+    if dtype == int( EnumKernelDType.int16) :
+        return EnumKernelDType.int16
+    if dtype == int( EnumKernelDType.int32) :
+        return EnumKernelDType.int32
+    if dtype == int( EnumKernelDType.int64) :
+        return EnumKernelDType.int64
+    return None
+
 if __name__ == '__main__' :
     PathManager.init()

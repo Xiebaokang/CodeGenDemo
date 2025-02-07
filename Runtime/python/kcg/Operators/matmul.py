@@ -68,7 +68,7 @@ def getMatmulSignature(dtypeA: torch.dtype, dtypeB : torch.dtype, dtypeC : torch
     c = torch.empty((M, N), device='cuda', dtype=dtypeC)
     # get function signature
     outSignature = _matmul(a, b, c)
-    print(f"[D] mm signature = {outSignature}, type =  {type(outSignature.values())}",)
+    # print(f"[D] mm signature = {outSignature}, type =  {type(outSignature.values())}",)
     return outSignature
 
 
@@ -79,7 +79,6 @@ class KernelArgMatmul :
         self.BLOCK_SIZE_K : int = 16
         self.THREAD_SIZE_M : int = 4
         self.THREAD_SIZE_N : int = 4
-        self.VECTORIZE_WIDTH : int = 4
         self.WARP_SIZE : int = 64 
         self.BLOCK_LAYOUT_M : int = 4
         self.BLOCK_LAYOUT_N : int = 1
@@ -141,37 +140,37 @@ class KernelArgMatmul :
             return ToTorchType(self.__dataType_C)
     
     def __str__(self):
-        retstr = '['
-        retstr += (str(self.BLOCK_SIZE_M) + ',')
-        retstr += (str(self.BLOCK_SIZE_N) + ',')
-        retstr += (str(self.BLOCK_SIZE_K) + ',')
-        retstr += (str(self.THREAD_SIZE_M) + ',')
-        retstr += (str(self.THREAD_SIZE_N) + ',')
-        retstr += (str(self.VECTORIZE_WIDTH) + ',')
-        retstr += (str(self.WARP_SIZE) + ',')
-        retstr += (str(self.BLOCK_LAYOUT_M) + ',')
-        retstr += (str(self.BLOCK_LAYOUT_N) + ',')
-        retstr += (str(self.WARP_LAYOUT_M) + ',')
-        retstr += (str(self.WARP_LAYOUT_N) + ',')
-        retstr += (str(self.__dataType_A) + ',')
-        retstr += (str(self.__dataType_B) + ',')
-        retstr += (str(self.__dataType_C) + ',')
-        retstr += (str(self.M) + ',')
-        retstr += (str(self.N) + ',')
-        retstr += (str(self.K) + ',')
-        retstr += (str(self.isATranspose) + ',')
-        retstr += (str(self.GLOB_LOAD_WIDTH_A) + ',')
-        retstr += (str(self.GLOB_LOAD_WIDTH_B) + ',')
-        retstr += (str(self.WARP_SCATTER_WIDTH_A) + ',')
-        retstr += (str(self.WARP_SCATTER_WIDTH_B) + ',')
-        retstr += (str(self.THREAD_SCATTER_WIDTH_A) + ',')
-        retstr += (str(self.THREAD_SCATTER_WIDTH_B) + ',')
-        retstr += (str(self.LOCAL_SPLIT_U) + ',')
-        retstr += (str(self.BLOCK_MAPPING) + ',')
-        retstr += (str(self.GLOB_STORE_WIDTH ) + ',')
-        retstr += (str(self.UNROLL_NUM) + ',')
-        retstr += (str(self.REG_PREFETCH) + ',')
-        retstr += (str(self.SHARED_PREFETCH) + ',')
-        retstr += (str(self.LOAD_CONTINUOUS) + ',')
-        retstr += (str(self.REDUCE_C_CONTINUOUS) + ']')
+        retstr = '{\n'
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_SIZE_M) + ' : ' + str(self.BLOCK_SIZE_M) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_SIZE_N) + ' : ' + str(self.BLOCK_SIZE_N) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_SIZE_K) + ' : ' + str(self.BLOCK_SIZE_K) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_THREAD_SIZE_M) + ' : ' + str(self.THREAD_SIZE_M) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_THREAD_SIZE_N) + ' : ' + str(self.THREAD_SIZE_N) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_WARP_SIZE) + ' : ' + str(self.WARP_SIZE) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_LAYOUT_M) + ' : ' + str(self.BLOCK_LAYOUT_M) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_LAYOUT_N) + ' : ' + str(self.BLOCK_LAYOUT_N) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_WARP_LAYOUT_M) + ' : ' + str(self.WARP_LAYOUT_M) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_WARP_LAYOUT_N) + ' : ' + str(self.WARP_LAYOUT_N) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_DTYPE_A) + ' : ' + str(self.__dataType_A) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_DTYPE_B) + ' : ' + str(self.__dataType_B) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_DTYPE_C) + ' : ' + str(self.__dataType_C) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_M) + ' : ' + str(self.M) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_N) + ' : ' + str(self.N) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_K) + ' : ' + str(self.K) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_IS_A_TRANSPOSE) + ' : ' + str(self.isATranspose) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_GLOB_LOAD_WIDTH_A) + ' : ' + str(self.GLOB_LOAD_WIDTH_A) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_GLOB_LOAD_WIDTH_B) + ' : ' + str(self.GLOB_LOAD_WIDTH_B) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_WARP_SCATTER_WIDTH_A) + ' : ' + str(self.WARP_SCATTER_WIDTH_A) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_WARP_SCATTER_WIDTH_B) + ' : ' + str(self.WARP_SCATTER_WIDTH_B) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_A) + ' : ' + str(self.THREAD_SCATTER_WIDTH_A) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_B) + ' : ' + str(self.THREAD_SCATTER_WIDTH_B) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_LOCAL_SPLIT_U) + ' : ' + str(self.LOCAL_SPLIT_U) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_BLOCK_MAPPING) + ' : ' + str(self.BLOCK_MAPPING) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_GLOB_STORE_WIDTH) + ' : ' + str(self.GLOB_STORE_WIDTH ) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_UNROLL_NUM) + ' : ' + str(self.UNROLL_NUM) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_REG_PREFETCH) + ' : ' + str(self.REG_PREFETCH) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_SHARED_PREFETCH) + ' : ' + str(self.SHARED_PREFETCH) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_LOAD_CONTINUOUS) + ' : ' + str(self.LOAD_CONTINUOUS) + ',\n')
+        retstr += ( str(ConfigKeywords.KEY_REDUCE_C_CONTINUOUS) + ' : ' + str(self.REDUCE_C_CONTINUOUS) + '\n' )
+        retstr += '}'
         return retstr
