@@ -33,11 +33,14 @@ class UserInputs:
         kp = self.kernelParam
         sizeA = kp.BLOCK_SIZE_M*kp.BLOCK_SIZE_K*sizeof(kp.dtype('A'))
         sizeB = kp.BLOCK_SIZE_N*kp.BLOCK_SIZE_K*sizeof(kp.dtype('B'))
+        sizeAB = sizeA + sizeB
+        if kp.SHARED_PREFETCH > 0 :
+            sizeAB *= 2
         sizeC = -1
         if kp.LOCAL_SPLIT_U > 1 :
             sizeC = kp.BLOCK_SIZE_M * kp.BLOCK_SIZE_N * kp.LOCAL_SPLIT_U * sizeof(kp.dtype('A'))
-        if (sizeA + sizeB) > sizeC :
-            return sizeA + sizeB
+        if sizeAB > sizeC :
+            return sizeAB
         return sizeC
     
     def numCTA(self) : 
