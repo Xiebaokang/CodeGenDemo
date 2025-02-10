@@ -12,6 +12,7 @@ include/config.h
 include/config.h
 include/config.h
 _cache/
-cfg_cominations.json
+cfg_cominations*
 _dump/
 _pkls/
+_tmp/

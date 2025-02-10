@@ -23,7 +23,7 @@ import ctypes
 
 # import pymlir
 
-best_perf = None
+best_perf = []
 
 class KernelTestResult :
     def __init__(self,kpm : KernelArgMatmul):
@@ -98,7 +98,7 @@ class PerfTester :
             
             res.append(elapsed_time)
             res1.append(elapsed_time_torch)
-            
+            time.sleep(0.02)
         print("c=",c)
         print("d=",d)
 
@@ -122,16 +122,18 @@ class PerfTester :
 
     
     @staticmethod
-    def _getBestPerf(perfData : List[KernelTestResult]) -> KernelTestResult:
+    def _getBestPerf(perfData : List[KernelTestResult], topNum = 1) -> KernelTestResult:
         global best_perf
         for d in perfData:
             if d.isCorrect :
-                if best_perf is None or best_perf.acc < d.acc:
-                    best_perf = d
+                best_perf.append(d)
+                best_perf.sort(key=lambda x: x.acc, reverse=True)
+                if len(best_perf) > topNum :
+                    best_perf = best_perf[0:topNum]
         return best_perf
       
     @staticmethod
-    def runPerfTests(lock, endsignal ,outputPAth = None, benchmarkCount = 5, warmupCount = 1, deviceId = '0') : 
+    def runPerfTests(lock, endsignal ,outputPAth = None, benchmarkCount = 5, warmupCount = 1, deviceId = '0', topNum = 6) : 
         # collect kernels from pkl         
         valid_kernels = [] # List[Tuple[KernelArgMatmul,UserInputs,CompiledKernel]]
         total_kernel_count = 0
@@ -164,10 +166,11 @@ class PerfTester :
             for (kpm,inConfig,packedKernel) in valid_kernels :
                 perf_data.append(PerfTester._test_perf(kpm, inConfig, packedKernel, benchmarkCount, warmupCount , deviceId))        
             valid_kernels.clear()
-            bestPf = PerfTester._getBestPerf(perf_data)
+            bestPf = PerfTester._getBestPerf(perf_data, topNum)
             if bestPf is not None and outputPAth is not None :
                 with open(outputPAth,mode='w') as f:
-                    f.write(str(bestPf) + '\n')
+                    for i in range(0,len(bestPf)) :
+                        f.write(f"[{i}] {str(bestPf[i])} \n-------\n")
         print(f"=====[ PerfTest Finished ] =======\n   - Best : {best_perf} ")
     
 
@@ -202,9 +205,9 @@ class SerialCompileTask :
         logger = logging.getLogger(logfile)
         return logger
     
-    def compile_kernels(self, lock, kernelArgs : List[KernelArgMatmul],lbs=0,ubs=-1) -> List:
+    def compile_kernels(self, lock, kernelArgs : List[KernelArgMatmul],lbs=0,ubs=-1,namePrefix='') -> List:
         # 读取 JSON 文件
-        output_path = PathManager.pikle_dir() + f'/valid_kernels_{lbs}_{ubs}.pkl'
+        output_path = PathManager.pikle_dir() + f'/valid_kernels_{namePrefix}_{lbs}_{ubs}.pkl'
         valid_kernels = [] 
         if ubs < 0:
             lbs = 0; ubs = len(kernelArgs) 
@@ -219,12 +222,13 @@ class SerialCompileTask :
   
 
 class ParallelTaskManager :
-    def __init__(self,json_path : str, perf_out_path : str, benchmarkcnt = 5, warmupcnt = 1, devId='0' ):
+    def __init__(self, total_cfg_count ,json_path_arr : List[str], perf_out_path : str, benchmarkcnt = 5, warmupcnt = 1, devId='0', keepTopNum = 1 ):
         ctx = multiprocessing.get_context('spawn')
         self.Process = ctx.Process
         self.lock = ctx.Lock()
         self.subProcList = []
-        self.cfg_json_path = json_path
+        self.cfg_json_path_arr = json_path_arr
+        self.CFG_COUNT = total_cfg_count
         self.task_groups = []
         self.m_totalKernels = []
         self.endSignal = ctx.Manager().Value(ctypes.c_int,0)
@@ -234,10 +238,11 @@ class ParallelTaskManager :
         self.nBenchMark = benchmarkcnt
         self.nWarmup = warmupcnt
         self.devId = devId
+        self.topNum = keepTopNum
     
     def _perfMonitorFunc(self) :
         id = 0
-        self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,self.perf_out_path + str(id),self.nBenchMark, self.nWarmup, self.devId))
+        self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,self.perf_out_path + str(id),self.nBenchMark, self.nWarmup, self.devId, self.topNum))
         self.perfProc.start()
         while True:
             self.perfProc.join()
@@ -258,23 +263,15 @@ class ParallelTaskManager :
             s.join()
         self.subProcList.clear()
     
-    def _get_kernelargMatmul(self,st = 0,maxLen = -1) -> List[KernelArgMatmul] : 
+    ## 从json文件里读取 cfgs，转化为 List[KernelArgMatmul] 
+    def _get_kernelargMatmul(self, json_path : str) -> List[KernelArgMatmul] : 
         import json
-        with open(self.cfg_json_path, 'r') as file:
+        with open(json_path, 'r') as file:
             json_data = json.load(file)
         cfgs = json_data['cfgs']
         kernelArgs = []
         kw = ConfigKeywords
-        currLen = 0
-        if maxLen < 0:
-            maxLen = len(cfgs)
-        endid = st + maxLen
-        if endid > len(cfgs) :
-            endid  = len(cfgs)
-        for i in range(st,endid) :
-            if currLen >= maxLen :
-                break
-            currLen+=1
+        for i in range(0,len(cfgs)) :
             config = cfgs[i]
             arg = KernelArgMatmul(config[kw.KEY_M],config[kw.KEY_N],config[kw.KEY_K], 
                                 EnumKernelDType(config[kw.KEY_DTYPE_A]), 
@@ -310,33 +307,28 @@ class ParallelTaskManager :
             
         return kernelArgs
     
-    def run(self, maxProcess = 10, st = 0, json_cfgs_limit = -1, needCompile = True, needPerfTest = True) :
-        print(f"====== start from cfg[{st}] limit {json_cfgs_limit} =========")
-        kernelConfigs = self._get_kernelargMatmul(st = 0, maxLen = -1)
+    def run(self, maxProcess = 10, st = 0, needCompile = True, needPerfTest = True) :
+        print(f"====== start from cfg[{st}] =========")
         procCount = 0
-        CFG_COUNT = len(kernelConfigs)
-        startId = st
-        if json_cfgs_limit < 0:
-            endId = CFG_COUNT
-        else:
-            endId = startId + json_cfgs_limit
-            if endId >= CFG_COUNT :
-                endId = CFG_COUNT
-                
+        dealed = 0
         if needPerfTest:
             self.perfProcMonitor.start()
         
         if needCompile :
-            for i in range(startId,endId) :
-                sct = SerialCompileTask()
-                self._createSubProc(sct.compile_kernels,self.lock,kernelConfigs,i,i+1)
-                procCount += 1
-                self.task_groups.append(sct)
-                if procCount >= maxProcess or i == CFG_COUNT-1:
-                    print(f"========= Wating for Compile tasks [{i+1}/{CFG_COUNT}]  ============")
-                    self._waitAll()
-                    procCount = 0
-            print(f"========= All Compile tasks Finished [{CFG_COUNT}] ! ============")
+            for jsonPath in self.cfg_json_path_arr :
+                print(f"=========== Dealing json : {jsonPath} ================")
+                kernelConfigs = self._get_kernelargMatmul(jsonPath)
+                words = jsonPath.split('/')
+                namePrefix = words[-1].split('.')[0]
+                for i in range(0,len(kernelConfigs)) :
+                    sct = SerialCompileTask()
+                    self._createSubProc(sct.compile_kernels,self.lock,kernelConfigs,i,i+1,namePrefix)
+                    procCount += 1; dealed += 1
+                    if procCount >= maxProcess or i == self.CFG_COUNT-1:
+                        print(f"========= Wating for Compile tasks [{dealed}/{self.CFG_COUNT}]  ============")
+                        self._waitAll()
+                        procCount = 0
+            print(f"========= All Compile tasks Finished [{self.CFG_COUNT}] ! ============")
         self.endSignal.value = 1
         
         if needPerfTest :

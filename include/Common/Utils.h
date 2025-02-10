@@ -223,7 +223,8 @@ struct NVVMMetadata {
 // #define LOG_DEBUG(message,mod)  \
 // {\
 //   llvm::outs() << message;llvm::outs().flush(); mod.dump();\
-}
+// }
+
 #define LOG_DEBUG(message,mod)  0
 
 /*******************  common tool functions ****************/

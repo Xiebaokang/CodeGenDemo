@@ -154,10 +154,41 @@ def save_to_json(combinations, output_file="config_combinations.json"):
     with open(output_file, "w") as f:
         json.dump(combinations, f, indent=4)
 
-def config_gen(tuning_cfg_file :str, output_file : str) :
-    cfgs = get_cfgs(tuning_cfg_file)
-    save_to_json(cfgs,output_file)
-    print(f"Generated {len(cfgs['cfgs'])} configurations and saved to 'config_combinations.json'.")
+def getTempJsonFileName(startIndex : int, endIndex : int, outDir:str) :
+    return f'{outDir}/tmp_json_{str(startIndex)}_{str(endIndex)}.json'
+
+def split_bigjson_to_temp(bigcfgs : Dict, startIndex : int, endIndex : int, outDir:str) -> str:
+    if outDir[-1] == '/':
+        outDir = outDir[:-1]
+    tmpjson = {'cfgs' : []}
+    maxLen = len(bigcfgs['cfgs'])
+    for i in range(startIndex,endIndex) :
+        if i >= maxLen : 
+            break
+        else:
+            tmpjson['cfgs'].append(bigcfgs['cfgs'][i])
+    filename = getTempJsonFileName(startIndex,endIndex,outDir)
+    save_to_json(tmpjson, filename)
+    return filename
+
+def config_gen(tuning_cfg_file :str, tempDir : str, preGeneratedJson : str) :
+    cfgs = None
+    if len(preGeneratedJson) > 0 :
+        print(f'======== Use pre-generated json combinations {preGeneratedJson} ==========')
+        cfgs = read_params(preGeneratedJson)
+    else:
+        print(f'======== Generate combinations by {tuning_cfg_file} ==========')
+        cfgs = get_cfgs(tuning_cfg_file)
+    items = cfgs['cfgs']
+    singleLength = 200
+    tempFileNames = []
+    for i in range(0,len(items), singleLength) :
+        fname = split_bigjson_to_temp(cfgs,i,i+singleLength,tempDir)
+        tempFileNames.append(fname)
+        
+    print(f"Generated {len(items)} configurations and saved subfiles to {tempDir}")
+    return (tempFileNames,len(items))
+
 
 # # 主函数
 # if __name__ == "__main__":
