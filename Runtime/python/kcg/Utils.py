@@ -50,6 +50,20 @@ def deserialize_from_file(pkl_path) :
             return []
         return temp
 
+def delete_files_in_directory(directory):
+    # 确保目录存在
+    if os.path.exists(directory) and os.path.isdir(directory):
+        # 遍历目录中的所有文件和子目录
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            # 如果是文件，删除它
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        print(f"Deleted files in {directory}")
+    else:
+        print(f"The directory {directory} does not exist.")
+
+
 @functools.lru_cache()
 def libcuda_dirs():
     libs = subprocess.check_output(["/sbin/ldconfig", "-p"]).decode()
@@ -245,12 +259,15 @@ def calculate_file_hash(file_path ,algorithm='md5',hash_len=10) -> int:
         ret = hasher.hexdigest()
         return int(ret[:hash_len],16)
 
+
+
 class DeviceInfo :
     @staticmethod
     def get_cuda_stream(idx=None):
         if idx is None:
             idx = DeviceInfo.get_current_device()
         try:
+            # print(f"[D]--------- DeviceInfo.get_current_device() is {idx}")
             from torch._C import _cuda_getCurrentRawStream
             return _cuda_getCurrentRawStream(idx)
         except ImportError:
@@ -290,6 +307,10 @@ class PathManager :
         return str(PathManager.project_dir())+'/_pkls'
     
     @staticmethod
+    def tmp_dir() ->str :
+        return str(PathManager.project_dir())+'/_tmp'
+    
+    @staticmethod
     def default_cache_dir()->str:
         # return os.path.join(Path.home(), ".kcg", "cache")
         return str(PathManager.project_dir()) + '/_cache'
@@ -317,11 +338,22 @@ class PathManager :
         # return PathManager.__project_dir() + "/bin/libkcg_compiler.so"
     
     @staticmethod
-    def init() :
+    def init(clearPkl = False, clearDump = False, clearOverride = False, clearCache = False, clearTmp = False) :
         os.makedirs(PathManager.pikle_dir(),exist_ok=True)
         os.makedirs(PathManager.default_cache_dir(),exist_ok=True)
         os.makedirs(PathManager.default_override_dir(),exist_ok=True)
         os.makedirs(PathManager.default_dump_dir(),exist_ok=True)
+        os.makedirs(PathManager.tmp_dir(),exist_ok=True)
+        if clearPkl :
+            delete_files_in_directory(PathManager.pikle_dir())
+        if clearCache :
+            delete_files_in_directory(PathManager.default_cache_dir())
+        if clearOverride :
+            delete_files_in_directory(PathManager.default_override_dir())
+        if clearDump :
+            delete_files_in_directory(PathManager.default_dump_dir())
+        if clearTmp :
+            delete_files_in_directory(PathManager.tmp_dir())
         
 #  关键字
 class ConfigKeywords :

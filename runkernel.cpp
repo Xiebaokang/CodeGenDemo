@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
   hipModuleLoad(&module, argv[6]);
   // 获取内核函数
   hipFunction_t kernel;
-  hipError_t error = hipModuleGetFunction(&kernel, module, "GEMM_testKernel");
+  hipError_t error = hipModuleGetFunction(&kernel, module, argv[7]);
   if (error == hipSuccess) {
     std::cout << "Successfully obtained the function handle." << std::endl;
   } else {
@@ -101,7 +101,9 @@ int main(int argc, char** argv) {
   dim3 dimBlock = {16, 16};
   dim3 dimGrid = {(N + dimBlock.x - 1) / dimBlock.x, (M + dimBlock.y - 1) / dimBlock.y};
 
-  hipModuleLaunchKernel(kernel, std::stoi(argv[4]), 1, 1, std::stoi(argv[5]), 1, 1, 50000, 0, args, NULL);  
+  for(int i=0;i<7;++i){
+    hipModuleLaunchKernel(kernel, std::stoi(argv[4]), 1, 1, std::stoi(argv[5]), 1, 1, 2048, 0, args, NULL);  
+  }
   gemm_kernel<<<dimGrid, dimBlock>>>(d_A, d_B, d_D, M, N, K);
   verify_kernel<<<dimGrid, dimBlock>>>(d_C, d_D, M, N);
 

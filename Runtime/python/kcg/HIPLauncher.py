@@ -39,9 +39,9 @@ def make_stub(kernelLibFile : KernelLibFile) -> str :
         with open(src_path, "w") as f:
             for line in src:
                 f.write(line)  # generate stub code
-        # with open('/home/xushilong/CodeGenDemo/tempstub.c', "w") as f:
-        #     for line in src:
-        #         f.write(line)  # generate stub code
+        with open('/home/xushilong/CodeGenDemo/tempstub.c', "w") as f:
+            for line in src:
+                f.write(line)  # generate stub code
         so = build(so_name, src_path, tmpdir)
         with open(so, "rb") as f:
             return so_cache_manager.put(f.read(), so_name, binary=True)
@@ -290,9 +290,9 @@ class HIPLauncher :
             self.m_cWrapper = getattr(mod, "launch")
         return self.m_cWrapper
 
-    def launchKernel(self,*args):
+    def launchKernel(self,devId:int,*args):
         wrapper = self._getWrapper()
-        stream = DeviceInfo.get_cuda_stream()
+        stream = DeviceInfo.get_cuda_stream(devId)
         if wrapper is None:
             raise Exception("kcg: _getWrapper failed")
         gridDims = self.m_kernelLib.m_gridDims

@@ -55,8 +55,8 @@ class CudaLoaderST(object):
     def loadBinary(self, kernelFile : KernelLibFile) -> KernelRuntimeInfo :
         binaryPath = kernelFile.m_filePath
         name = kernelFile.m_kernelFuncName
-        shared = kernelFile.m_shmSize
-        device = kernelFile.m_device
+        shared = int(kernelFile.m_shmSize)
+        device = int(kernelFile.m_device)
         mod,func, n_regs, n_spills = self.load_binary(name,binaryPath,shared,device)
         kernelFile.m_kernelInfo = KernelRuntimeInfo(mod,func,n_regs,n_spills)
         return kernelFile.m_kernelInfo
@@ -96,8 +96,8 @@ class HIPLoaderST(object):
         if kernelFile.m_kernelInfo is None:
             binaryPath = kernelFile.m_filePath
             name = kernelFile.m_kernelFuncName
-            shared = kernelFile.m_shmSize
-            device = kernelFile.m_device
+            shared = int(kernelFile.m_shmSize)
+            device = int(kernelFile.m_device)
             mod,func, n_regs, n_spills = self.load_binary(name,binaryPath,shared,device)
             info = KernelRuntimeInfo(mod,func,n_regs,n_spills)
             kernelFile.m_kernelInfo = info

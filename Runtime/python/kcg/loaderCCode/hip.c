@@ -67,11 +67,11 @@ static PyObject *loadBinary(PyObject *self, PyObject *args) {
                         &device)) {
     return NULL;
   }
-  // printf("parsed info: name = %s\n",name);
-  // printf("parsed info: data = %s\n",data);
-  // printf("parsed info: data_size = %ld\n",data_size);
-  // printf("parsed info: shared = %d\n",shared);
-  // printf("parsed info: device = %d\n",device);
+  printf("parsed info: name = %s\n",name);
+  printf("parsed info: data = %s\n",data);
+  printf("parsed info: data_size = %ld\n",data_size);
+  printf("parsed info: shared = %d\n",shared);
+  printf("parsed info: device = %d\n",device);
 
 
   // Open HSACO file

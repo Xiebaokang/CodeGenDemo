@@ -171,8 +171,18 @@ def split_bigjson_to_temp(bigcfgs : Dict, startIndex : int, endIndex : int, outD
     save_to_json(tmpjson, filename)
     return filename
 
-def config_gen(tuning_cfg_file :str, tempDir : str, preGeneratedJson : str) :
+def config_gen(tuning_cfg_file :str, preGeneratedJson : str) :
     cfgs = None
+    tempFileNames = []
+    # if len(startSubjson) > 0:
+    #     if os.path.exists(PathManager.tmp_dir()) and os.path.isdir(PathManager.tmp_dir()):
+    #     # 遍历目录中的所有文件和子目录
+    #         for filename in os.listdir(PathManager.tmp_dir()):
+    #             file_path = os.path.join(PathManager.tmp_dir(), filename)
+    #             # 如果是文件，删除它
+    #             if os.path.isfile(file_path):
+    #                 tempFileNames.append(file_path)
+    #     return (tempFileNames,len(items))
     if len(preGeneratedJson) > 0 :
         print(f'======== Use pre-generated json combinations {preGeneratedJson} ==========')
         cfgs = read_params(preGeneratedJson)
@@ -181,12 +191,11 @@ def config_gen(tuning_cfg_file :str, tempDir : str, preGeneratedJson : str) :
         cfgs = get_cfgs(tuning_cfg_file)
     items = cfgs['cfgs']
     singleLength = 200
-    tempFileNames = []
     for i in range(0,len(items), singleLength) :
-        fname = split_bigjson_to_temp(cfgs,i,i+singleLength,tempDir)
+        fname = split_bigjson_to_temp(cfgs,i,i+singleLength,PathManager.tmp_dir())
         tempFileNames.append(fname)
         
-    print(f"Generated {len(items)} configurations and saved subfiles to {tempDir}")
+    print(f"Generated {len(items)} configurations and saved subfiles to {PathManager.tmp_dir()}")
     return (tempFileNames,len(items))
 
 

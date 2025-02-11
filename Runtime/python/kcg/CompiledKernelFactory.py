@@ -55,7 +55,7 @@ class UserInputs:
 # 用户输入：hsacopath，kernel名字(通过amdgcn获取)，
 class CompiledKernelFactory :
     @staticmethod
-    def getKernel(info : UserInputs) -> CompiledKernel:
+    def getKernel(info : UserInputs, device : int) -> CompiledKernel:
         if info.operatorKind==EnumOperator.Matmul :
             signature = getMatmulSignature(info.kernelParam.dtypeTorch('A'),info.kernelParam.dtypeTorch('B'),info.kernelParam.dtypeTorch('C'))
             return CompiledKernel(
@@ -64,7 +64,8 @@ class CompiledKernelFactory :
                 info.sharedMem(),
                 signature,
                 info.gridDims(),
-                info.blockDims()
+                info.blockDims(),
+                device
             )
         if info.operatorKind==EnumOperator.Convolution :
             return None
