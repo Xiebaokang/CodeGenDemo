@@ -4,14 +4,14 @@ if __name__ == '__main__' :
     from ConfigGenerator import *
     PathManager.init(clearPkl=True, clearTmp=True, clearCache=True)
     # Tuning 参数空间配置文件
-    # tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_configs.json'
-    tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_cfgs_1.json'
+    tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_configs.json'
+    # tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_cfgs_1.json'
     # 是否使用已生成好的 combination 文件
-    preGeneratedCombinations = '/home/xushilong/CodeGenDemo/cfg_cominations_2.json'
+    preGeneratedCombinations = '/home/xushilong/CodeGenDemo/cfg_cominations_1.json'
     # [for debug use] 是否从已生成的 subjson开始处理。
     startFromSubJson = '/home/xushilong/CodeGenDemo/_tmp/tmp_json_33400_33600.json'
     # perf文件路径
-    perfPAth = '/home/xushilong/CodeGenDemo/perfRecordlog_4'
+    perfPAth = '/home/xushilong/CodeGenDemo/perfRecordlog_5'
     
     '''
         文件生成关系：
@@ -23,8 +23,11 @@ if __name__ == '__main__' :
     # DeviceInfo.set_current_device(7)
     print(f'===== Set current device to {DeviceInfo.get_current_device()} =======')
     print('==== waiting for config_gen ==== ')
-    tempfileNames,totalLen = config_gen(tuning_param_file, preGeneratedJson= '')
+    nProcess = 100
+    smallJsonLen = nProcess * 5
+    
+    tempfileNames,totalLen = config_gen(tuning_param_file, preGeneratedJson= preGeneratedCombinations , singleLength = smallJsonLen)
     print('==== config_gen Done! Start deal ==== ')
-    tm =  ParallelTaskManager(totalLen, tempfileNames, perfPAth, benchmarkcnt=7, warmupcnt=2, devId=DeviceInfo.get_current_device(), keepTopNum=5)
-    tm.run(maxProcess=40, startFromSubjson = '', needCompile=True, needPerfTest=True)
+    tm =  ParallelTaskManager(totalLen, tempfileNames, perfPAth, benchmarkcnt=10, warmupcnt=1, devId=DeviceInfo.get_current_device(), keepTopNum = 15)
+    tm.run(maxProcess= nProcess , startFromSubjson = '', needCompile=True, needPerfTest=True)
 

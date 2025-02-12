@@ -106,7 +106,43 @@ class KernelArgMatmul :
         self.SHARED_PREFETCH : int = 0
         self.LOAD_CONTINUOUS : int = 0
         self.REDUCE_C_CONTINUOUS : int = 0
-        
+    
+    def jsonfy(self) : 
+        obj = {
+            str(ConfigKeywords.KEY_BLOCK_SIZE_M) : str(self.BLOCK_SIZE_M),
+            str(ConfigKeywords.KEY_BLOCK_SIZE_N) : str(self.BLOCK_SIZE_N),
+            str(ConfigKeywords.KEY_BLOCK_SIZE_K) : str(self.BLOCK_SIZE_K),
+            str(ConfigKeywords.KEY_THREAD_SIZE_M) : str(self.THREAD_SIZE_M),
+            str(ConfigKeywords.KEY_THREAD_SIZE_N) : str(self.THREAD_SIZE_N),
+            str(ConfigKeywords.KEY_WARP_SIZE) : str(self.WARP_SIZE),
+            str(ConfigKeywords.KEY_BLOCK_LAYOUT_M) : str(self.BLOCK_LAYOUT_M),
+            str(ConfigKeywords.KEY_BLOCK_LAYOUT_N) : str(self.BLOCK_LAYOUT_N),
+            str(ConfigKeywords.KEY_WARP_LAYOUT_M) : str(self.WARP_LAYOUT_M),
+            str(ConfigKeywords.KEY_WARP_LAYOUT_N) : str(self.WARP_LAYOUT_N),
+            str(ConfigKeywords.KEY_DTYPE_A) : str(self.__dataType_A),
+            str(ConfigKeywords.KEY_DTYPE_B) : str(self.__dataType_B), 
+            str(ConfigKeywords.KEY_DTYPE_C) : str(self.__dataType_C), 
+            str(ConfigKeywords.KEY_M) : str(self.M) ,
+            str(ConfigKeywords.KEY_N) : str(self.N) ,
+            str(ConfigKeywords.KEY_K) : str(self.K) ,
+            str(ConfigKeywords.KEY_IS_A_TRANSPOSE) : str(self.isATranspose) ,
+            str(ConfigKeywords.KEY_GLOB_LOAD_WIDTH_A) : str(self.GLOB_LOAD_WIDTH_A) ,
+            str(ConfigKeywords.KEY_GLOB_LOAD_WIDTH_B) : str(self.GLOB_LOAD_WIDTH_B) ,
+            str(ConfigKeywords.KEY_WARP_SCATTER_WIDTH_A) : str(self.WARP_SCATTER_WIDTH_A) ,
+            str(ConfigKeywords.KEY_WARP_SCATTER_WIDTH_B) : str(self.WARP_SCATTER_WIDTH_B) ,
+            str(ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_A) : str(self.THREAD_SCATTER_WIDTH_A) ,
+            str(ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_B) : str(self.THREAD_SCATTER_WIDTH_B) ,
+            str(ConfigKeywords.KEY_LOCAL_SPLIT_U) : str(self.LOCAL_SPLIT_U) ,
+            str(ConfigKeywords.KEY_BLOCK_MAPPING) : str(self.BLOCK_MAPPING) ,
+            str(ConfigKeywords.KEY_GLOB_STORE_WIDTH) : str(self.GLOB_STORE_WIDTH ) ,
+            str(ConfigKeywords.KEY_UNROLL_NUM) : str(self.UNROLL_NUM) ,
+            str(ConfigKeywords.KEY_REG_PREFETCH) : str(self.REG_PREFETCH) ,
+            str(ConfigKeywords.KEY_SHARED_PREFETCH) : str(self.SHARED_PREFETCH) ,
+            str(ConfigKeywords.KEY_LOAD_CONTINUOUS) : str(self.LOAD_CONTINUOUS) ,
+            str(ConfigKeywords.KEY_REDUCE_C_CONTINUOUS) : str(self.REDUCE_C_CONTINUOUS) ,
+        }
+        return obj
+    
     def check(self) :
         # problem size check
         assert self.M % self.BLOCK_SIZE_M == 0 
@@ -151,9 +187,9 @@ class KernelArgMatmul :
         retstr += f" \"{str(ConfigKeywords.KEY_BLOCK_LAYOUT_N)}\"  :  {str(self.BLOCK_LAYOUT_N)} ,\n"
         retstr += f" \"{str(ConfigKeywords.KEY_WARP_LAYOUT_M)}\"  :  {str(self.WARP_LAYOUT_M)} ,\n"
         retstr += f" \"{str(ConfigKeywords.KEY_WARP_LAYOUT_N)}\"  :  {str(self.WARP_LAYOUT_N)} ,\n"
-        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_A)}\"  :  {str(self.__dataType_A)} ,\n"
-        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_B)}\"  :  {str(self.__dataType_B)} ,\n"
-        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_C)}\"  :  {str(self.__dataType_C)} ,\n"
+        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_A)}\"  :  {self.__dataType_A} ,\n"
+        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_B)}\"  :  {self.__dataType_B} ,\n"
+        retstr += f" \"{str(ConfigKeywords.KEY_DTYPE_C)}\"  :  {self.__dataType_C} ,\n"
         retstr += f" \"{str(ConfigKeywords.KEY_M)}\"  :  {str(self.M)} ,\n"
         retstr += f" \"{str(ConfigKeywords.KEY_N)}\"  :  {str(self.N)} ,\n"
         retstr += f" \"{str(ConfigKeywords.KEY_K)}\"  :  {str(self.K)} ,\n"

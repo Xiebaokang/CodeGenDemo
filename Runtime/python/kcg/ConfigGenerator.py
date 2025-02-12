@@ -171,7 +171,7 @@ def split_bigjson_to_temp(bigcfgs : Dict, startIndex : int, endIndex : int, outD
     save_to_json(tmpjson, filename)
     return filename
 
-def config_gen(tuning_cfg_file :str, preGeneratedJson : str) :
+def config_gen(tuning_cfg_file :str, preGeneratedJson : str, singleLength : int) :
     cfgs = None
     tempFileNames = []
     # if len(startSubjson) > 0:
@@ -190,7 +190,6 @@ def config_gen(tuning_cfg_file :str, preGeneratedJson : str) :
         print(f'======== Generate combinations by {tuning_cfg_file} ==========')
         cfgs = get_cfgs(tuning_cfg_file)
     items = cfgs['cfgs']
-    singleLength = 200
     for i in range(0,len(items), singleLength) :
         fname = split_bigjson_to_temp(cfgs,i,i+singleLength,PathManager.tmp_dir())
         tempFileNames.append(fname)
