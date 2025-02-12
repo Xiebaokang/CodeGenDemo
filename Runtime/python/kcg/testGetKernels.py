@@ -23,8 +23,8 @@ if __name__ == '__main__' :
     # DeviceInfo.set_current_device(7)
     print(f'===== Set current device to {DeviceInfo.get_current_device()} =======')
     print('==== waiting for config_gen ==== ')
-    nProcess = 100
-    smallJsonLen = nProcess * 5
+    nProcess = 100 # 最大进程数
+    smallJsonLen = nProcess * 5  # 单个小json文件含有的cofigs上限
     
     tempfileNames,totalLen = config_gen(tuning_param_file, preGeneratedJson= preGeneratedCombinations , singleLength = smallJsonLen)
     print('==== config_gen Done! Start deal ==== ')
