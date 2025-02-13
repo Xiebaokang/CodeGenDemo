@@ -1,7 +1,7 @@
 {
     "BLOCK_SIZE_M" : [32,64],
     "BLOCK_SIZE_N" : [32,64],
-    "BLOCK_SIZE_K" : [16,8],
+    "BLOCK_SIZE_K" : [8,16],
     "THREAD_SIZE_M" : [4,8],
     "THREAD_SIZE_N" : [4,8],
     "GLOB_LOAD_WIDTH_A" : [2,4],

@@ -7,11 +7,12 @@ if __name__ == '__main__' :
     tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_configs.json'
     # tuning_param_file = '/home/xushilong/CodeGenDemo/TuningConfigs/GEMM_cfgs_1.json'
     # 是否使用已生成好的 combination 文件
-    preGeneratedCombinations = '/home/xushilong/CodeGenDemo/cfg_cominations_1.json'
+    preGeneratedCombinations = '/home/xushilong/CodeGenDemo/cfg_cominations_2.json'
+    # preGeneratedCombinations = '/home/xushilong/CodeGenDemo/combs_ALL.json'
     # [for debug use] 是否从已生成的 subjson开始处理。
-    startFromSubJson = '/home/xushilong/CodeGenDemo/_tmp/tmp_json_33400_33600.json'
+    # startFromSubJson = '/home/xushilong/CodeGenDemo/_tmp/tmp_json_33400_33600.json'
     # perf文件路径
-    perfPAth = '/home/xushilong/CodeGenDemo/perfRecordlog_5'
+    perfPAth = '/home/xushilong/CodeGenDemo/perfRecordlog_7'
     
     '''
         文件生成关系：
@@ -28,6 +29,13 @@ if __name__ == '__main__' :
     
     tempfileNames,totalLen = config_gen(tuning_param_file, preGeneratedJson= preGeneratedCombinations , singleLength = smallJsonLen)
     print('==== config_gen Done! Start deal ==== ')
-    tm =  ParallelTaskManager(totalLen, tempfileNames, perfPAth, benchmarkcnt=10, warmupcnt=1, devId=DeviceInfo.get_current_device(), keepTopNum = 15)
+    tm =  ParallelTaskManager(totalLen, tempfileNames, perfPAth, 
+                              benchmarkcnt=20, 
+                              warmupcnt=1, 
+                              devId=DeviceInfo.get_current_device(), 
+                              keepTopNum = 15,
+                              torchDynamicLogPath='', 
+                              nTorchEpsInitTest=20
+    )
     tm.run(maxProcess= nProcess , startFromSubjson = '', needCompile=True, needPerfTest=True)
 
