@@ -45,12 +45,20 @@ class KernelTestResult :
             }
         return obj
     
+    def parseFromJson(self,jsonObj) :
+        self.isCorrect = jsonObj['correct']
+        self.acc = jsonObj['acc']
+        self.torch_elapseTimeMs = jsonObj['torchMs']
+        self.kcg_elapseTimeMs = jsonObj['kcgMs']
+        self.kpm = KernelArgMatmul(0,0,0,1,1,1)
+        self.kpm.assignWithJson(jsonObj['config'])
+
 class PerfTester :
     _a = None
     _b = None
     torch_eps = 0  # torch的eps，用于计算 speedup
     D = None
-    BestPerf = []
+    BestPerf = [] #: List[KernelTestResult]
     torchDynamicEps = []  # torch的动态eps，用于描述torch的性能变化（卡的稳定性）
     check_dynamic_torch_perf = 2000  # 每执行完多少个case，检查一下torch的当前性能。记录波动
     _torchEpsStoreFile = PathManager().default_cache_dir() + '/benchmarkTorchEps.log'
@@ -344,9 +352,19 @@ class ParallelTaskManager :
                 return
             else:
                 print("======= [W] PerfTester Broken. Restart it ==========")
-                id +=1
-                outfilename = f"{self.perf_out_path}_{str(id)}.json"
-                self.perfProc = self.Process(target=PerfTester.runPerfTests, args=(self.lock,self.endSignal,outfilename,self.nBenchMark, self.nWarmup, str(self.devId), self.topNum))
+                # id +=1
+                # outfilename = f"{self.perf_out_path}_{str(id)}.json"
+                
+                with open(outfilename) as f :
+                    obj = json.load(f)
+                    for cfg in obj['results'] :
+                        kpm = KernelArgMatmul(0,0,0,1,1,1)
+                        ktr = KernelTestResult(kpm)
+                        ktr.parseFromJson(cfg)
+                        PerfTester.BestPerf.append(ktr)
+                self.perfProc = self.Process(target=PerfTester.runPerfTests, 
+                                             args=(self.lock,self.endSignal,outfilename,self.nBenchMark, self.nWarmup, str(self.devId), self.topNum, 
+                                                   self.torchDynamicLogPath, self.nTorchEpsInitTest))
                 self.perfProc.start()
     
     def _createSubProc(self,func,*params) :

@@ -48,6 +48,13 @@ def check_size(config : Dict) :
     wlm = config[ConfigKeywords.KEY_WARP_LAYOUT_M]
     wln = config[ConfigKeywords.KEY_WARP_LAYOUT_N]
     
+    if m % bm != 0 :
+        return False
+    if n % bn != 0 :
+        return False
+    if k % bk != 0 :
+        return False
+    
     blockDim_m = blm * wlm
     blockDim_n = bln * wln
     if blockDim_m * tm != bm or blockDim_n * tn != bn :
@@ -171,8 +178,8 @@ def split_bigjson_to_temp(bigcfgs : Dict, startIndex : int, endIndex : int, outD
     save_to_json(tmpjson, filename)
     return filename
 
-def config_gen(tuning_cfg_file :str, preGeneratedJson : str, singleLength : int) :
-    cfgs = None
+def config_gen(tuning_cfg_file :str, preGeneratedJson : str, singleLength : int, cacheTuningSPaceFile : str, splitBigJson = True) :
+    combs = {'cfgs' : []}
     tempFileNames = []
     # if len(startSubjson) > 0:
     #     if os.path.exists(PathManager.tmp_dir()) and os.path.isdir(PathManager.tmp_dir()):
@@ -185,16 +192,23 @@ def config_gen(tuning_cfg_file :str, preGeneratedJson : str, singleLength : int)
     #     return (tempFileNames,len(items))
     if len(preGeneratedJson) > 0 :
         print(f'======== Use pre-generated json combinations {preGeneratedJson} ==========')
-        cfgs = read_params(preGeneratedJson)
+        combs = read_params(preGeneratedJson)
     else:
         print(f'======== Generate combinations by {tuning_cfg_file} ==========')
-        cfgs = get_cfgs(tuning_cfg_file)
-    items = cfgs['cfgs']
-    for i in range(0,len(items), singleLength) :
-        fname = split_bigjson_to_temp(cfgs,i,i+singleLength,PathManager.tmp_dir())
-        tempFileNames.append(fname)
+        combs['cfgs'] = get_cfgs(tuning_cfg_file)
+        if len(cacheTuningSPaceFile) > 0 :
+            print(f'====== store tuning combinations to file : {cacheTuningSPaceFile} =======')
+            with open(cacheTuningSPaceFile,'w') as f:
+                json.dump(combs,f)
+    items = combs['cfgs']
+    
+    if splitBigJson :
+        print(f'====== split big tuning combinations to {PathManager.tmp_dir()} ==========')
+        for i in range(0,len(items), singleLength) :
+            fname = split_bigjson_to_temp(combs,i,i+singleLength,PathManager.tmp_dir())
+            tempFileNames.append(fname)
         
-    print(f"Generated {len(items)} configurations and saved subfiles to {PathManager.tmp_dir()}")
+    print(f"Generated {len(items)} configurations and saved subfiles Done")
     return (tempFileNames,len(items))
 
 
