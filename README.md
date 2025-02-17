@@ -97,3 +97,4 @@ python test.py > log.log 2>&1
 # 测试性能： hipprof --pmc python test.py > log.log 2>&1
 ```
 
+
