@@ -244,3 +244,72 @@ class KernelArgMatmul :
         retstr += f" \"{str(ConfigKeywords.KEY_REDUCE_C_CONTINUOUS)}\"  :  {str(self.REDUCE_C_CONTINUOUS)} \n"
         retstr += '}'
         return retstr
+    
+    
+class TuningSpaceChecker_Matmul :
+    @staticmethod
+    def check_shm_size(config : Dict) :
+        # 计算约束条件
+        dtypeC = config[ ConfigKeywords.KEY_DTYPE_C]
+        dtypeBytes = sizeof(get_dtype_from_int(dtypeC))
+        value1 = (config[ ConfigKeywords.KEY_BLOCK_SIZE_M] + config[ ConfigKeywords.KEY_BLOCK_SIZE_N]) * config[ ConfigKeywords.KEY_BLOCK_SIZE_K] * dtypeBytes * config[ ConfigKeywords.KEY_LOCAL_SPLIT_U]
+        value2 = config[ ConfigKeywords.KEY_BLOCK_SIZE_M] * config[ ConfigKeywords.KEY_BLOCK_SIZE_N] * dtypeBytes * config[ ConfigKeywords.KEY_LOCAL_SPLIT_U]
+
+        if max(value1, value2) < 16384 :
+            # 展开 KEY_DTYPE 到 KEY_DTYPE_A, KEY_DTYPE_B, KEY_DTYPE_C
+            dtype_value = config.pop( ConfigKeywords.KEY_DTYPE_C)
+            config[ ConfigKeywords.KEY_DTYPE_A] = dtype_value
+            config[ ConfigKeywords.KEY_DTYPE_B] = dtype_value
+            config[ ConfigKeywords.KEY_DTYPE_C] = dtype_value
+            return True
+        return False
+    
+    @staticmethod
+    def check_warp(config : Dict) -> bool :
+        wlm = config[ConfigKeywords.KEY_WARP_LAYOUT_M]
+        wln = config[ConfigKeywords.KEY_WARP_LAYOUT_N]
+        warpsz = config[ConfigKeywords.KEY_WARP_SIZE]
+        if wlm * wln == warpsz :
+            return True
+        return False
+    
+    @staticmethod
+    def check_size(config : Dict) -> bool :
+        bm = config[ConfigKeywords.KEY_BLOCK_SIZE_M]
+        bn = config[ConfigKeywords.KEY_BLOCK_SIZE_N]
+        bk = config[ConfigKeywords.KEY_BLOCK_SIZE_K]
+        tm = config[ConfigKeywords.KEY_THREAD_SIZE_M]
+        tn = config[ConfigKeywords.KEY_THREAD_SIZE_N]
+        m = config[ConfigKeywords.KEY_M]
+        n = config[ConfigKeywords.KEY_N]
+        k = config[ConfigKeywords.KEY_K]
+        
+        blm = config[ConfigKeywords.KEY_BLOCK_LAYOUT_M]
+        bln = config[ConfigKeywords.KEY_BLOCK_LAYOUT_N]
+        
+        wlm = config[ConfigKeywords.KEY_WARP_LAYOUT_M]
+        wln = config[ConfigKeywords.KEY_WARP_LAYOUT_N]
+        
+        if m % bm != 0 :
+            return False
+        if n % bn != 0 :
+            return False
+        if k % bk != 0 :
+            return False
+        
+        blockDim_m = blm * wlm
+        blockDim_n = bln * wln
+        if blockDim_m * tm != bm or blockDim_n * tn != bn :
+            return False
+        
+        wswa = config[ConfigKeywords.KEY_WARP_SCATTER_WIDTH_A]
+        wswb = config[ConfigKeywords.KEY_WARP_SCATTER_WIDTH_B]
+        tswa = config[ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_A]
+        tswb = config[ConfigKeywords.KEY_THREAD_SCATTER_WIDTH_B]
+        if wswa < tswa or wswb < tswb :
+            return False
+        if wswa % tswa != 0 or wswb % tswb != 0 :
+            return False
+        return True
+
+    
